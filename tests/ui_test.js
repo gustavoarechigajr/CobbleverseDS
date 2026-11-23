@@ -46,12 +46,16 @@ async function fakeFetch(url, opts) {
     if (Number(u.searchParams.get('rev')) === rev) await new Promise(r => setTimeout(r, 30));
     return json(Object.assign({ rev }, st));
   }
-  if (u.pathname === '/api/action') { actions.push(JSON.parse(opts.body)); return json({ ok: true }); }
+  if (u.pathname === '/api/action') {
+    if (!opts.headers || opts.headers['X-CVDS'] !== '1') return json({ ok: false, error: 'missing header' });
+    actions.push(JSON.parse(opts.body)); return json({ ok: true });
+  }
   if (u.pathname === '/api/keys') return json({ ok: true, keys: [{ id: 'key.inventory', label: 'Inventory', cat: 'Inventory', bound: 'E' }] });
   if (u.pathname === '/api/recipes') return json({ ok: true, recipes: [], items: {} });
   if (u.pathname === '/api/chat') return json({ ok: true, lines: ['hello'] });
   if (u.pathname === '/api/pc') return json({ sig: 's1', open: true, party: st.party.slots, boxes: [{ name: 'Box 1', slots: [{ id: 'p1', name: 'Eevee', species: 'Eevee', lvl: 5, types: ['Normal'], ivs: { HP: 31 }, ivTotal: 31, moves: ['Tackle'] }, ...Array(29).fill({})] }], items: {}, sortModes: ['NAME'] });
   if (u.pathname === '/api/terminal') return json({ sig: 't1', open: true, menu: 5, list: [{ k: 'minecraft:diamond', n: 1234 }], items: { 'minecraft:diamond': { name: 'Diamond', max: 64 } }, free: 10, slots: 54 });
+  if (u.pathname === '/api/spawns') return json({ ok: true, items: {}, buckets: [{ bucket: 'common', list: [{ name: 'Pidgey', pct: 40, dex: 16, dexState: 'CAUGHT', types: 'normal/flying' }, { name: 'Rattata', pct: 35, dex: 19, dexState: 'NONE' }] }, { bucket: 'ultra-rare', list: [] }] });
   if (u.pathname === '/api/battle') return json(st.battle ? { active: true, mine: [{ name: 'Pikachu', species: 'Pikachu', lvl: 12, hp: 30, maxHp: 35, flat: true, types: ['Electric'] }], theirs: [{ name: 'Gyarados', species: 'Gyarados', lvl: 20, hp: 1, maxHp: 1, flat: false, types: ['Water', 'Flying'] }], request: { singles: true, moves: [{ id: 'thunderbolt', name: 'Thunderbolt', pp: 15, maxPp: 15, type: 'Electric', cat: 'special', power: 90, acc: 100 }], bench: [] } } : { active: false });
   return { ok: false, status: 404, json: async () => ({ ok: false, error: 'nope' }) };
 }
@@ -90,9 +94,25 @@ const activeTab = () => ($('#tabs button.on') || {}).dataset?.tab;
   const mv = actions.find(a => a.op === 'move');
   check(mv && mv.from === 0 && mv.to === 30 && mv.amount === 'all' && mv.menu === 3, 'tap-tap sends a move with the menu id');
 
+  // a selection must not carry over into another container
+  tap($('#grid .slot[data-i="0"]'));
   setState('none'); await sleep(150);
+  const before = actions.length;
+  tap($('#grid .slot[data-i="20"]')); await sleep(50);
+  check(actions.length === before, 'selection is cleared when the container changes');
   w.__t.showTab('party'); await sleep(100);
   check($('#party').textContent.includes('Pikachu'), 'party tab lists the party');
+
+  // party reorder: tap the reorder handle on slot 0, then slot 2
+  $('#party [data-re="0"]').click(); await sleep(20);
+  $('#party [data-p="2"]').click(); await sleep(50);
+  const re = actions.find(a => a.kind === 'pc' && a.op === 'move');
+  check(re && re.from.type === 'party' && re.from.slot === 0 && re.to.slot === 2, 'party reorder sends a party move');
+
+  w.__t.showTab('spawns'); await sleep(200);
+  check($('#sp-list').textContent.includes('Rattata') && $('#sp-list').textContent.includes('Caught'), 'spawn list shows species and dex status');
+  $('#sp-missing').checked = true; $('#sp-missing').dispatchEvent(new w.Event('change'));
+  check(!$('#sp-list').textContent.includes('Pidgey') && $('#sp-list').textContent.includes('Rattata'), '"only not caught" hides caught species');
 
   setState('pc'); await sleep(300);
   check(activeTab() === 'pc', 'PC opening switches to the PC tab');
@@ -112,6 +132,12 @@ const activeTab = () => ($('#tabs button.on') || {}).dataset?.tab;
   check(!$('#net').classList.contains('hidden'), 'terminal shows the network panel');
   check($('#net-grid').textContent.includes('1.2k'), 'network counts are abbreviated');
   check($('#bulk [data-bulk="take"]').classList.contains('hidden'), 'terminal hides Take all');
+  const n0 = actions.length;
+  const tile = $('#net-grid .ni');
+  tile.dispatchEvent(new w.MouseEvent('pointerdown', { bubbles: true })); tile.dispatchEvent(new w.MouseEvent('pointerup', { bubbles: true })); tile.click();
+  await sleep(100);
+  const sent = actions.slice(n0);
+  check(sent.length === 1 && sent[0].kind === 'terminal', 'a terminal tap sends one terminal action (no stray key press)');
 
   // idle blackout
   w.__t.setLastTouch(Date.now() - 10 * 60 * 1000);

@@ -16,6 +16,7 @@
     <button data-tab="party">Party</button>
     <button data-tab="pc">PC</button>
     <button data-tab="battle">Battle</button>
+    <button data-tab="spawns">Spawns</button>
     <button data-tab="chat">Chat</button>
   </nav>
   <main>
@@ -69,7 +70,7 @@
     </section>
     <section id="tab-party" class="tab">
       <div id="party" class="party"></div>
-      <div class="bar"><button id="party-send" class="big">Send out / recall selected</button></div>
+      <div class="bar"><button id="party-send" class="big">Send out / recall selected</button><span class="note">Tap to select · tap ⇅ then another slot to reorder</span></div>
     </section>
     <section id="tab-pc" class="tab">
       <div class="bar">
@@ -97,6 +98,14 @@
       <div id="b-moves"></div>
       <h3 id="b-switch-h">Switch</h3>
       <div id="b-bench" class="chips"></div>
+    </section>
+    <section id="tab-spawns" class="tab">
+      <div class="bar">
+        <button id="sp-refresh">Check here</button>
+        <label class="note"><input id="sp-missing" type="checkbox"> Only not caught</label>
+        <span id="sp-where" class="note"></span>
+      </div>
+      <div id="sp-list"></div>
     </section>
     <section id="tab-chat" class="tab">
       <div id="chat-log"></div>

@@ -31,6 +31,7 @@ public class MainActivity extends Activity {
 	private final Handler handler = new Handler(Looper.getMainLooper());
 	private WebView web;
 	private boolean waiting;
+	private boolean probing;
 
 	@Override
 	protected void onCreate(Bundle saved) {
@@ -88,6 +89,8 @@ public class MainActivity extends Activity {
 	}
 
 	private void showWaiting() {
+		setFocusable(false);
+		if (!probing) probe(); // e.g. the game quit between a good probe and loading the page
 		if (waiting) return;
 		waiting = true;
 		web.loadDataWithBaseURL(null,
@@ -100,6 +103,7 @@ public class MainActivity extends Activity {
 
 	/** Polls until the mod answers, then loads the UI. The UI itself handles later disconnects. */
 	private void probe() {
+		probing = true;
 		new Thread(() -> {
 			boolean up = false;
 			try {
@@ -112,9 +116,11 @@ public class MainActivity extends Activity {
 			}
 			boolean ok = up;
 			handler.post(() -> {
-				if (isFinishing() || isDestroyed()) return;
+				if (isFinishing() || isDestroyed()) { probing = false; return; }
 				if (ok) {
+					probing = false;
 					waiting = false;
+					setFocusable(false);
 					web.loadUrl(URL_UI);
 				} else {
 					handler.postDelayed(this::probe, 2000);
@@ -140,13 +146,22 @@ public class MainActivity extends Activity {
 		super.onDestroy();
 	}
 
+	/** Focusable only while typing; otherwise the controller must stay with the game. */
+	void setFocusable(boolean focusable) {
+		if (focusable) getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+		else getWindow().addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
+	}
+
+	@Override
+	protected void onPause() {
+		setFocusable(false);
+		super.onPause();
+	}
+
 	final class Bridge {
 		@JavascriptInterface
 		public void setFocusable(boolean focusable) {
-			handler.post(() -> {
-				if (focusable) getWindow().clearFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
-				else getWindow().addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
-			});
+			handler.post(() -> MainActivity.this.setFocusable(focusable));
 		}
 	}
 }

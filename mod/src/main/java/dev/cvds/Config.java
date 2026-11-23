@@ -17,6 +17,7 @@ public final class Config {
 		Config c = new Config();
 		try {
 			if (Files.exists(p)) c = gson.fromJson(Files.readString(p), Config.class);
+			if (c == null) c = new Config(); // empty file
 			else Files.writeString(p, gson.toJson(c));
 		} catch (Exception e) {
 			CvdsClient.LOG.warn("cvds: could not read {}, using defaults", p, e);

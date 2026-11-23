@@ -81,9 +81,10 @@ public final class Crafting {
 		MenuInv inv = new MenuInv(mc);
 		if (Snapshot.TOMS && Terminal.craftingTerminal(mc)) {
 			// Tom's crafting terminal fills the grid from the whole storage network on the server.
-			return Terminal.craft(mc, id, max);
+			return Terminal.craft(mc, id, max, ItemKeys.key(recipe.getResultItem(mc.level.registryAccess())));
 		}
 		clearGrid(inv);
+		for (int g : gridSlots(inv)) if (!inv.empty(g)) return Api.error("inventory full: can't clear the crafting grid");
 		// Ingredients are placed with ordinary clicks rather than the recipe-book packet: servers
 		// ignore that packet for recipes the player hasn't unlocked, and Cobbleverse never unlocks them.
 		List<int[]> plan = plan(inv, rb, recipe);

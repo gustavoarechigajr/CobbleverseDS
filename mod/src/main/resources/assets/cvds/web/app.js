@@ -20,7 +20,7 @@ let lastGridSig = ''; // menu + items JSON; the grid is only rebuilt when it cha
 
 // ---------- networking ----------
 async function api(path, body) {
-  const opts = body === undefined ? {} : { method: 'POST', body: JSON.stringify(body) };
+  const opts = body === undefined ? {} : { method: 'POST', body: JSON.stringify(body), headers: { 'X-CVDS': '1', 'Content-Type': 'application/json' } };
   const r = await fetch(path, opts);
   const j = await r.json();
   if (j.ok === false) throw new Error(j.error || 'failed');
@@ -97,6 +97,7 @@ function showTab(name) {
   if (name === 'chat') loadChat();
   if (name === 'pc') { pcSig = ''; loadPc(); }
   if (name === 'battle') loadBattle();
+  if (name === 'spawns') { loadSpawns.last = Date.now(); loadSpawns(); }
   render();
 }
 $$('#tabs button').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
@@ -110,6 +111,7 @@ function render() {
     // Record the new kind first: showTab() re-enters render().
     const prev = lastScreenKind;
     lastScreenKind = kind;
+    if (menuId !== lastMenuId) setSelected(null); // a selection never carries into another container
     lastMenuId = menuId;
     if (kind === 'container' && prev !== null) { showTab('storage'); wake(); }
     if (kind === 'pc' && prev !== null) { showTab('pc'); wake(); }
@@ -162,9 +164,9 @@ function renderGrid(force) {
       if (q) cls += info.name.toLowerCase().includes(q) ? ' hit' : ' miss';
       inner = `<img src="${iconUrl(s.k)}" alt="" onerror="this.remove()"><div class="txt">${esc(info.name)}</div>`;
       if (s.n > 1) inner += `<span class="n">${s.n}</span>`;
-      if (info.dur != null && info.dur < 1) {
-        const hue = Math.round(info.dur * 120);
-        inner += `<div class="dur"><i style="width:${Math.round(info.dur * 100)}%;background:hsl(${hue},80%,50%)"></i></div>`;
+      if (s.d != null && s.d < 1) {
+        const hue = Math.round(s.d * 120);
+        inner += `<div class="dur"><i style="width:${Math.round(s.d * 100)}%;background:hsl(${hue},80%,50%)"></i></div>`;
       }
     } else if (q) cls += ' miss';
     html.push(`<div class="${cls}" data-i="${s.i}" style="left:${left}px;top:${top}px;width:${size}px;height:${size}px">${inner}</div>`);
@@ -185,6 +187,12 @@ function slotHotbarIndex(s) {
   // Hotbar slots appear in menu order; the first "h" slot is hotbar 0.
   const hb = menuSlots().filter(x => x.g === 'h');
   return hb.indexOf(s);
+}
+
+/** Replaces an element's HTML only when it changed, so taps aren't lost to needless rebuilds. */
+function setHtml(sel, html) {
+  const el = $(sel);
+  if (el.dataset.html !== html) { el.innerHTML = html; el.dataset.html = html; }
 }
 
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
@@ -224,6 +232,7 @@ $$('#modes button').forEach(b => b.addEventListener('click', () => {
   const grid = $('#grid');
   let timer = null, downSlot = null, longFired = false, startX = 0, startY = 0;
   grid.addEventListener('pointerdown', e => {
+    if (e.isPrimary === false) return;
     const el = e.target.closest('.slot');
     if (!el) return;
     downSlot = Number(el.dataset.i);
@@ -315,6 +324,11 @@ window.addEventListener('resize', () => render());
 let net = null, netSig = '', netTimer = null;
 function fmtCount(n) { return n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + 'M' : n >= 1e4 ? Math.round(n / 1000) + 'k' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n); }
 async function loadNet() {
+  if (loadNet.busy) return;
+  loadNet.busy = true;
+  try { await loadNetInner(); } finally { loadNet.busy = false; }
+}
+async function loadNetInner() {
   try {
     const r = await api('/api/terminal?sig=' + netSig);
     if (r.same) return;
@@ -418,7 +432,7 @@ async function loadKeys(force) {
 
 function keyButton(k) {
   const on = favs.includes(k.id);
-  return `<div class="key"><button class="press" data-k="${esc(k.id)}">${esc(k.label)}<small>${esc(k.bound || 'unbound')}</small></button><button class="star" data-star="${esc(k.id)}">${on ? '★' : '☆'}</button></div>`;
+  return `<div class="key"><button class="press" data-kb="${esc(k.id)}">${esc(k.label)}<small>${esc(k.bound || 'unbound')}</small></button><button class="star" data-star="${esc(k.id)}">${on ? '★' : '☆'}</button></div>`;
 }
 
 function renderKeys() {
@@ -435,8 +449,8 @@ function renderKeys() {
 }
 
 document.addEventListener('click', e => {
-  const p = e.target.closest('[data-k]');
-  if (p) { act({ kind: 'key', id: p.dataset.k }); return; }
+  const p = e.target.closest('[data-kb]');
+  if (p) { act({ kind: 'key', id: p.dataset.kb }); return; }
   const s = e.target.closest('[data-star]');
   if (s) {
     const id = s.dataset.star;
@@ -451,7 +465,7 @@ $('#key-refresh').addEventListener('click', () => loadKeys(true));
 // ---------- party ----------
 function renderParty() {
   const p = state.party;
-  const sig = JSON.stringify(p || null);
+  const sig = JSON.stringify([p || null, partyMoveFrom]);
   if (sig === lastPartySig && $('#party').childElementCount) return;
   lastPartySig = sig;
   const el = $('#party');
@@ -460,7 +474,8 @@ function renderParty() {
     if (!m.name) return `<div class="mon empty" data-p="${i}">Empty</div>`;
     const frac = m.maxHp ? m.hp / m.maxHp : 0;
     const hue = Math.round(frac * 120);
-    return `<div class="mon ${p.sel === i ? 'sel' : ''}" data-p="${i}">
+    return `<div class="mon ${p.sel === i ? 'sel' : ''}${partyMoveFrom === i ? ' moving' : ''}" data-p="${i}">
+      <button class="re" data-re="${i}" title="Reorder">⇅</button>${m.k ? `<img src="${iconUrl(m.k)}" alt="" onerror="this.remove()">` : ''}
       <div class="nm">${esc(m.name)}${m.shiny ? ' ✨' : ''}</div>
       <div class="sub">Lv ${m.lvl} · ${m.hp}/${m.maxHp} HP${m.fainted ? ' · Fainted' : ''}${m.status ? ' · ' + esc(m.status.toUpperCase()) : ''}</div>
       <div class="hp"><i style="width:${Math.round(frac * 100)}%;background:hsl(${hue},75%,45%)"></i></div>
@@ -469,9 +484,22 @@ function renderParty() {
     </div>`;
   }).join('');
 }
-$('#party').addEventListener('click', e => {
+let partyMoveFrom = null;
+$('#party').addEventListener('click', async e => {
+  const re = e.target.closest('[data-re]');
+  if (re) { partyMoveFrom = partyMoveFrom === Number(re.dataset.re) ? null : Number(re.dataset.re); lastPartySig = ''; renderParty(); return; }
   const m = e.target.closest('[data-p]');
-  if (m) act({ kind: 'party', slot: Number(m.dataset.p) });
+  if (!m) return;
+  const slot = Number(m.dataset.p);
+  if (partyMoveFrom != null) {
+    const from = partyMoveFrom;
+    partyMoveFrom = null;
+    lastPartySig = '';
+    if (from !== slot) await act({ kind: 'pc', op: 'move', from: { type: 'party', slot: from }, to: { type: 'party', slot } });
+    renderParty();
+    return;
+  }
+  act({ kind: 'party', slot });
 });
 $('#party-send').addEventListener('click', () => {
   if (state && state.party) act({ kind: 'party', slot: state.party.sel, send: true });
@@ -484,6 +512,11 @@ let pcTimer = null;
 const STAT_LABEL = { HP: 'HP', ATTACK: 'Atk', DEFENCE: 'Def', SPECIAL_ATTACK: 'SpA', SPECIAL_DEFENCE: 'SpD', SPEED: 'Spe' };
 
 async function loadPc() {
+  if (loadPc.busy) return;
+  loadPc.busy = true;
+  try { await loadPcInner(); } finally { loadPc.busy = false; }
+}
+async function loadPcInner() {
   try {
     const r = await api('/api/pc?sig=' + pcSig);
     if (r.same) return;
@@ -571,8 +604,7 @@ function renderPcDetail() {
     <h3>IVs (${m.ivTotal}/186)</h3>${ivs}
     <h3>Moves</h3><div>${(m.moves || []).map(esc).join(' · ') || '—'}</div>`;
   rel.classList.toggle('hidden', !pc.open && pcSel.type === 'pc');
-  rel.classList.remove('armed');
-  rel.textContent = 'Release';
+  if (rel.dataset.for !== m.id) { rel.classList.remove('armed'); rel.textContent = 'Release'; rel.dataset.for = m.id; }
 }
 
 async function pcAct(body) {
@@ -670,6 +702,11 @@ function effLabel(x) {
 }
 let battle = null, battleTimer = null, tabBeforeBattle = null, wasInBattle = false;
 async function loadBattle() {
+  if (loadBattle.busy) return;
+  loadBattle.busy = true;
+  try { await loadBattleInner(); } finally { loadBattle.busy = false; }
+}
+async function loadBattleInner() {
   try { battle = await api('/api/battle'); renderBattle(); } catch (e) { $('#b-note').textContent = e.message; }
 }
 function hpBar(m) {
@@ -695,7 +732,7 @@ function renderBattle() {
     return;
   }
   const foe = (b.theirs || [])[0];
-  $('#b-sides').innerHTML = (b.theirs || []).map(m => monCard(m, true)).join('') + (b.mine || []).map(m => monCard(m, false)).join('');
+  setHtml('#b-sides', (b.theirs || []).map(m => monCard(m, true)).join('') + (b.mine || []).map(m => monCard(m, false)).join(''));
   const r = b.request;
   const myTypes = ((b.mine || [])[0] || {}).types || [];
   if (!r) {
@@ -706,7 +743,7 @@ function renderBattle() {
     return;
   }
   $('#b-note').textContent = r.forceSwitch ? 'Choose a Pokémon to send in.' : r.singles ? 'Tap a move.' : 'Double battle: info only. Pick moves and targets on the game screen.';
-  $('#b-moves').innerHTML = r.forceSwitch ? '' : (r.moves || []).map(m => {
+  setHtml('#b-moves', r.forceSwitch ? '' : (r.moves || []).map(m => {
     const [label, cls] = foe ? effLabel(m.cat === 'status' ? null : effectiveness(m.type, foe.types)) : ['', ''];
     const stab = myTypes.some(t => t.toLowerCase() === (m.type || '').toLowerCase()) && m.cat !== 'status';
     const col = TYPE_COLOR[(m.type || '').toLowerCase()] || '#555';
@@ -717,9 +754,9 @@ function renderBattle() {
       <span class="row"><span>${esc(m.type || '')} · ${esc(m.cat || '')}${stab ? ' · STAB' : ''}</span><span>PP ${m.pp}/${m.maxPp}</span></span>
       <span class="row"><span>${pow} ${acc}</span></span>
       <span class="eff ${cls}">${label}</span></button>`;
-  }).join('');
+  }).join(''));
   $('#b-switch-h').classList.remove('hidden');
-  $('#b-bench').innerHTML = (r.bench || []).map(p => `<button data-sw="${p.id}" ${p.active || p.hp <= 0 || r.trapped ? 'disabled' : ''}>${esc(p.name)} Lv${p.lvl} · ${p.hp}/${p.maxHp}${p.active ? ' (in battle)' : ''}</button>`).join('');
+  setHtml('#b-bench', (r.bench || []).map(p => `<button data-sw="${p.id}" ${p.active || p.hp <= 0 || r.trapped ? 'disabled' : ''}>${esc(p.name)} Lv${p.lvl} · ${p.hp}/${p.maxHp}${p.active ? ' (in battle)' : ''}</button>`).join(''));
 }
 $('#b-moves').addEventListener('click', async e => {
   const b = e.target.closest('[data-move]');
@@ -742,12 +779,56 @@ function battleWatch() {
   if (!now && was && tab === 'battle' && tabBeforeBattle) showTab(tabBeforeBattle);
 }
 
+
+// ---------- spawn finder ----------
+let spawnData = null, spawnBiome = null, spawnLoading = false;
+async function loadSpawns() {
+  if (spawnLoading) return;
+  spawnLoading = true;
+  $('#sp-where').textContent = 'Checking…';
+  try {
+    spawnData = await api('/api/spawns');
+    spawnBiome = state && state.status ? state.status.biome : null;
+  } catch (e) { spawnData = null; $('#sp-list').innerHTML = `<div class="note">${esc(e.message)}</div>`; }
+  spawnLoading = false;
+  renderSpawns();
+}
+function renderSpawns() {
+  if (!spawnData) return;
+  const st = state && state.status;
+  $('#sp-where').textContent = st ? `${st.biomeName || st.biome} · ${clock(st.time)}${st.rain ? ' · rain' : ''}` : '';
+  const missing = $('#sp-missing').checked;
+  const LABEL = { CAUGHT: 'Caught', ENCOUNTERED: 'Seen', NONE: 'New' };
+  const html = (spawnData.buckets || []).map(b => {
+    const list = b.list.filter(s => !missing || s.dexState !== 'CAUGHT');
+    if (!list.length) return '';
+    return `<div class="spb"><h3>${esc(b.bucket.replace('-', ' '))}</h3>` + list.map(s => `<div class="sp">
+      ${s.k ? `<img src="${iconUrl(s.k)}" alt="" onerror="this.remove()">` : ''}
+      <span class="nm">${esc(s.name)}${s.dex ? ` <span class="note">#${s.dex}</span>` : ''}<br><span class="note">${esc(s.types || '')}</span></span>
+      ${s.dexState ? `<span class="badge ${s.dexState}">${LABEL[s.dexState] || s.dexState}</span>` : ''}
+      <span class="pct">${s.pct}%</span></div>`).join('') + '</div>';
+  }).join('');
+  $('#sp-list').innerHTML = html || `<div class="note">${missing ? 'You have caught everything that spawns here.' : 'Nothing can spawn here right now.'}</div>`;
+}
+$('#sp-refresh').addEventListener('click', loadSpawns);
+$('#sp-missing').addEventListener('change', renderSpawns);
+setInterval(() => {
+  // refresh when you walk into a different biome, or every 30 s (time of day / weather change spawns)
+  if (tab !== 'spawns' || !state || !state.status) return;
+  if (state.status.biome !== spawnBiome || Date.now() - (loadSpawns.last || 0) > 30000) { loadSpawns.last = Date.now(); loadSpawns(); }
+}, 3000);
+
 // ---------- chat ----------
 let quick = store.get('quick', []);
 function renderQuick() {
   $('#quick-cmds').innerHTML = quick.map((c, i) => `<button data-q="${i}">${esc(c)}</button>`).join('');
 }
 async function loadChat() {
+  if (loadChat.busy) return;
+  loadChat.busy = true;
+  try { await loadChatInner(); } finally { loadChat.busy = false; }
+}
+async function loadChatInner() {
   try {
     const r = await api('/api/chat');
     const log = $('#chat-log');
@@ -785,6 +866,9 @@ setInterval(() => { if (tab === 'chat') loadChat(); }, 2500);
 // it only takes focus while a text field is being edited.
 document.addEventListener('focusin', e => { if (e.target.matches('input') && window.CVDSApp) CVDSApp.setFocusable(true); });
 document.addEventListener('focusout', e => { if (e.target.matches('input') && window.CVDSApp) CVDSApp.setFocusable(false); });
+const unfocus = () => { if (window.CVDSApp) CVDSApp.setFocusable(false); };
+window.addEventListener('pagehide', unfocus);
+document.addEventListener('visibilitychange', () => { if (document.hidden) unfocus(); });
 
 // ---------- OLED care ----------
 // The panel goes fully black after a while without touches (black OLED pixels are off), and
@@ -795,7 +879,11 @@ let lastTouch = Date.now();
 const shade = document.createElement('div');
 shade.id = 'shade';
 document.body.appendChild(shade);
-function setDark(d) { shade.classList.toggle('on', d); if (!d) lastTouch = Date.now(); }
+function setDark(d) {
+  shade.classList.toggle('on', d);
+  if (!d) lastTouch = Date.now();
+  else if (document.activeElement && document.activeElement.matches('input')) document.activeElement.blur();
+}
 function isDark() { return shade.classList.contains('on'); }
 document.addEventListener('pointerdown', () => { lastTouch = Date.now(); }, true);
 // The waking tap lands on the shade, so it never presses whatever is underneath.

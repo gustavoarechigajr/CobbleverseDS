@@ -101,13 +101,15 @@ final class Terminal {
 	// ---- crafting terminal: fill the grid from the network, then craft once the result syncs ----
 	private static int craftTicks;
 	private static boolean craftMax;
+	private static String craftKey;
 
-	static JsonObject craft(Minecraft mc, String recipeId, boolean max) {
+	static JsonObject craft(Minecraft mc, String recipeId, boolean max, String resultKey) {
 		if (!(mc.player.containerMenu instanceof com.tom.storagemod.menu.CraftingTerminalMenu m)) return Api.error("no crafting terminal open");
 		net.minecraft.nbt.CompoundTag tag = new net.minecraft.nbt.CompoundTag();
 		tag.putString("fill", recipeId); // same message Tom's JEI/EMI transfer sends
 		m.sendMessage(tag);
 		craftMax = max;
+		craftKey = resultKey;
 		craftTicks = 40;
 		JsonObject r = Api.ok();
 		r.addProperty("network", true);
@@ -120,7 +122,9 @@ final class Terminal {
 		craftTicks--;
 		MenuInv inv = new MenuInv(mc);
 		int result = m.getResultSlotIndex();
-		if (inv.empty(result)) return; // grid not synced yet (or nothing could be placed: gives up after 2 s)
+		// Wait until the grid shows THIS recipe's result: the terminal can still be showing the
+		// previous one (it keeps the grid filled) until the server answers the fill request.
+		if (inv.empty(result) || !inv.key(result).equals(craftKey)) return;
 		craftTicks = 0;
 		if (craftMax) {
 			inv.click(result, 0, net.minecraft.world.inventory.ClickType.QUICK_MOVE);

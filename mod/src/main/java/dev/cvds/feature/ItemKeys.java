@@ -15,7 +15,10 @@ public final class ItemKeys {
 		if (stack == null || stack.isEmpty()) return "";
 		String id = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();
 		var patch = stack.getComponentsPatch();
+		// Durability is left out (the UI shows it as a bar): every point would be a new key and icon.
+		patch = patch.forget(t -> t == net.minecraft.core.component.DataComponents.DAMAGE);
 		String key = patch.isEmpty() ? id : id + "#" + Integer.toHexString(patch.hashCode());
+		if (SAMPLES.size() > 20_000) SAMPLES.clear(); // bound memory; samples are re-added as items are seen
 		SAMPLES.computeIfAbsent(key, k -> stack.copyWithCount(1));
 		return key;
 	}

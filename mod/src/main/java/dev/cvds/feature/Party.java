@@ -10,7 +10,7 @@ import net.minecraft.client.Minecraft;
 final class Party {
 	private Party() {}
 
-	static JsonObject json() {
+	static JsonObject json(JsonObject items) {
 		var storage = CobblemonClient.INSTANCE.getStorage();
 		JsonObject o = new JsonObject();
 		o.addProperty("sel", storage.getSelectedSlot());
@@ -21,6 +21,7 @@ final class Party {
 			if (p == null) { slots.add(new JsonObject()); continue; }
 			JsonObject s = new JsonObject();
 			s.addProperty("id", p.getUuid().toString());
+			try { s.addProperty("k", Snapshot.describe(com.cobblemon.mod.common.item.PokemonItem.from(p, 1, new org.joml.Vector4f(1, 1, 1, 1)), items)); } catch (Throwable ignored) {}
 			s.addProperty("name", p.getDisplayName(false).getString());
 			s.addProperty("species", p.getSpecies().getName());
 			s.addProperty("lvl", p.getLevel());

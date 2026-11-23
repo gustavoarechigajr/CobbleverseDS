@@ -19,7 +19,8 @@ BASE = "http://127.0.0.1:25599"
 
 def http(path, body=None, timeout=10):
     data = None if body is None else json.dumps(body).encode()
-    req = urllib.request.Request(BASE + path, data=data, method="POST" if body is not None else "GET")
+    req = urllib.request.Request(BASE + path, data=data, method="POST" if body is not None else "GET",
+                                 headers={"X-CVDS": "1", "Content-Type": "application/json"} if body is not None else {})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         raw = r.read()
         return raw if r.headers.get("Content-Type", "").startswith("image/") else json.loads(raw)
@@ -187,11 +188,31 @@ def bad_requests_are_rejected_cleanly(env):
     except urllib.error.HTTPError as e:
         assert e.code == 405
     try:
-        urllib.request.urlopen(urllib.request.Request(BASE + "/api/action", data=b"{not json", method="POST"), timeout=5)
+        urllib.request.urlopen(urllib.request.Request(BASE + "/api/action", data=b"{not json", method="POST", headers={"X-CVDS": "1"}), timeout=5)
         raise AssertionError("bad JSON should fail")
     except urllib.error.HTTPError as e:
         assert e.code == 500
     assert settle()["inGame"]
+
+
+@test
+def rejects_cross_site_requests(env):
+    """A web page in the phone's browser must not be able to drive the game."""
+    env.reset()
+    def status(path, body=None, headers=None):
+        req = urllib.request.Request(BASE + path, data=body, method="POST" if body is not None else "GET", headers=headers or {})
+        try:
+            with urllib.request.urlopen(req, timeout=5) as r:
+                return r.status
+        except urllib.error.HTTPError as e:
+            return e.code
+    chat = json.dumps({"kind": "chat", "text": "forged"}).encode()
+    assert status("/api/action", chat, {"Content-Type": "text/plain"}) == 403, "POST without X-CVDS must be refused"
+    assert status("/api/action", chat, {"X-CVDS": "1", "Origin": "http://evil.example"}) == 403
+    assert status("/api/state?rev=-1", headers={"Host": "evil.example:25599"}) == 403, "DNS rebinding host must be refused"
+    assert status("/api/state?rev=-1", headers={"Origin": "http://evil.example"}) == 403
+    assert status("/api/action", chat.replace(b"forged", b"x"), {"X-CVDS": "1", "Origin": BASE}) == 200
+    assert not any("forged" in l for l in http("/api/chat")["lines"])
 
 
 @test
@@ -353,6 +374,17 @@ def icons_render_as_png(env):
         raise AssertionError("unknown icon should 404")
     except urllib.error.HTTPError as e:
         assert e.code == 404
+
+
+@test
+def damaged_tools_share_one_key(env):
+    """Durability must not split item keys (and icons): it is shown as a bar instead."""
+    env.reset()
+    s = env.chest({0: ("minecraft:iron_pickaxe", 1), 1: ("minecraft:iron_pickaxe", 1)})
+    env.cmd('item replace block %d %d %d container.1 with minecraft:iron_pickaxe[damage=100]' % (env.px + 2, env.py, env.pz))
+    s = wait_for(lambda s: slot(s, 1).get("d") is not None, 5, "damaged pickaxe")
+    assert slot(s, 0)["k"] == slot(s, 1)["k"] == "minecraft:iron_pickaxe", (slot(s, 0), slot(s, 1))
+    assert "d" not in slot(s, 0) and abs(slot(s, 1)["d"] - (250 - 100) / 250) < 0.01, (slot(s, 0), slot(s, 1))
 
 
 @test
@@ -700,6 +732,27 @@ def battle_helper(env):
     env.cmd("execute as @a run stopbattle @s")
     env.cmd("kill @e[type=cobblemon:pokemon]")
     wait_for(lambda s: not s.get("battle"), 8, "battle end")
+
+
+@test
+def spawn_finder(env):
+    """Cobblemon only: what can spawn here, with Pokédex status."""
+    env.reset()
+    if "party" not in state():
+        print("  (skipped: Cobblemon not loaded)")
+        return
+    r = http("/api/spawns", timeout=20)
+    assert r.get("ok"), r
+    assert [b["bucket"] for b in r["buckets"]] == ["common", "uncommon", "rare", "ultra-rare"], r["buckets"]
+    entries = [e for b in r["buckets"] for e in b["list"]]
+    print(f"  ({len(entries)} spawnable here, e.g. {', '.join(e['name'] + ' ' + str(e['pct']) + '%' for e in entries[:4])})")
+    assert entries, "nothing parsed from /checkspawn: " + str([b.get("note") for b in r["buckets"]])
+    for b in r["buckets"]:
+        if b["list"]:
+            assert abs(sum(e["pct"] for e in b["list"]) - 100) < 2, (b["bucket"], sum(e["pct"] for e in b["list"]))
+    resolved = [e for e in entries if e.get("dex")]
+    assert len(resolved) >= len(entries) * 0.9, [e["name"] for e in entries if not e.get("dex")]
+    assert all(e["dexState"] in ("NONE", "ENCOUNTERED", "CAUGHT") for e in resolved)
 
 
 @test

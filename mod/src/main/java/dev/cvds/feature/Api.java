@@ -19,6 +19,12 @@ public final class Api implements dev.cvds.net.MiniHttpServer.Handler {
 	@Override
 	public Response handle(Request req) throws Exception {
 		String path = req.path();
+		// Only our own page may talk to us: a web page in the phone's browser could otherwise
+		// POST text/plain "simple requests" here (CSRF), or reach us by DNS rebinding.
+		if (!localHost(req.headers().get("host"))) return Response.text(403, "text/plain", "bad host");
+		String origin = req.headers().get("origin");
+		if (origin != null && !origin.equals("null") && !localHost(origin.replaceFirst("^https?://", ""))) return Response.text(403, "text/plain", "bad origin");
+		if (req.method().equals("POST") && !"1".equals(req.headers().get("x-cvds"))) return Response.text(403, "text/plain", "missing X-CVDS header");
 		if (req.method().equals("GET") && STATIC.containsKey(path)) return asset(STATIC.get(path));
 		if (path.equals("/api/state")) {
 			long since = parseLong(req.query().get("rev"), -1);
@@ -53,6 +59,11 @@ public final class Api implements dev.cvds.net.MiniHttpServer.Handler {
 					String sig = Integer.toHexString(body.hashCode());
 					return sig.equals(since) ? "{\"same\":true,\"sig\":\"" + sig + "\"}" : "{\"sig\":\"" + sig + "\"," + body.substring(1);
 				});
+			}
+			case "/api/spawns": {
+				if (!Snapshot.COBBLEMON) return Response.json(error("cobblemon not installed").toString());
+				if (mc.player == null) return Response.json(error("not in game").toString());
+				return Response.json(Spawns.query(mc).toString());
 			}
 			case "/api/battle": {
 				if (!Snapshot.COBBLEMON) return Response.json(error("cobblemon not installed").toString());
@@ -107,13 +118,15 @@ public final class Api implements dev.cvds.net.MiniHttpServer.Handler {
 
 	static Response onClient(Minecraft mc, ClientCall c) throws Exception {
 		JsonObject r;
+		var f = mc.submit(() -> {
+			try { return c.call(); }
+			catch (Exception e) { return error(e.getClass().getSimpleName() + ": " + e.getMessage()); }
+		});
 		try {
-			r = mc.submit(() -> {
-				try { return c.call(); }
-				catch (Exception e) { return error(e.getClass().getSimpleName() + ": " + e.getMessage()); }
-			}).get(5, TimeUnit.SECONDS);
+			r = f.get(5, TimeUnit.SECONDS);
 		} catch (java.util.concurrent.TimeoutException e) {
-			r = error("game did not respond in time");
+			// Don't let it run later behind the UI's back (a retry would then do it twice).
+			r = error(f.cancel(false) ? "game did not respond in time" : "game was slow; the action may still have applied");
 		}
 		return Response.json(r.toString());
 	}
@@ -122,15 +135,26 @@ public final class Api implements dev.cvds.net.MiniHttpServer.Handler {
 
 	static Response onClientRaw(Minecraft mc, ClientText c) throws Exception {
 		String r;
+		var f = mc.submit(() -> {
+			try { return c.call(); }
+			catch (Exception e) { return error(e.getClass().getSimpleName() + ": " + e.getMessage()).toString(); }
+		});
 		try {
-			r = mc.submit(() -> {
-				try { return c.call(); }
-				catch (Exception e) { return error(e.getClass().getSimpleName() + ": " + e.getMessage()).toString(); }
-			}).get(5, TimeUnit.SECONDS);
+			r = f.get(5, TimeUnit.SECONDS);
 		} catch (java.util.concurrent.TimeoutException e) {
+			f.cancel(false);
 			r = error("game did not respond in time").toString();
 		}
 		return Response.json(r);
+	}
+
+	static boolean localHost(String host) {
+		if (host == null) return false;
+		String h = host.toLowerCase(java.util.Locale.ROOT);
+		int port = CvdsClient.config.port;
+		return h.equals("127.0.0.1:" + port) || h.equals("localhost:" + port) || h.equals("[::1]:" + port)
+			// tests reach the Thor through "adb forward" on another local port
+			|| h.matches("(127\\.0\\.0\\.1|localhost):\\d+");
 	}
 
 	static JsonObject wrap(String field, JsonElement e) { JsonObject o = ok(); o.add(field, e); return o; }

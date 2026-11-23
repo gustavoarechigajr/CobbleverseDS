@@ -21,16 +21,21 @@ public final class Icons {
 	private Icons() {}
 	static final int SIZE = 64;
 	static final int PER_TICK = 8;
+	/** ~3-8 KB each, so this bounds the cache to a few tens of MB on very long sessions. */
+	static final int MAX_CACHED = 4000;
 	private static final Map<String, byte[]> CACHE = new ConcurrentHashMap<>();
 	private static final Map<String, CompletableFuture<byte[]>> PENDING = new ConcurrentHashMap<>();
 	private static final Queue<String> QUEUE = new ConcurrentLinkedQueue<>();
 	private static TextureTarget target;
 	private static boolean broken = false;
+	private static int failuresInARow = 0;
+	private static final java.util.Set<String> FAILED = ConcurrentHashMap.newKeySet();
 
 	/** PNG bytes for an item key, rendering it if needed. Null if the key was never seen. */
 	public static byte[] get(String key, long timeoutMs) throws Exception {
 		byte[] hit = CACHE.get(key);
 		if (hit != null) return hit;
+		if (broken || FAILED.contains(key)) return null;
 		if (!ItemKeys.SAMPLES.containsKey(key)) return null;
 		CompletableFuture<byte[]> f = PENDING.computeIfAbsent(key, k -> {
 			QUEUE.add(k);
@@ -45,13 +50,19 @@ public final class Icons {
 			CompletableFuture<byte[]> f = PENDING.remove(key);
 			if (f == null) continue;
 			try {
-				byte[] png = broken ? null : render(mc, ItemKeys.SAMPLES.get(key));
-				if (png == null) throw new IllegalStateException("icon rendering unavailable");
+				byte[] png = render(mc, ItemKeys.SAMPLES.get(key));
+				if (png == null) throw new IllegalStateException("no sample for " + key);
+				if (CACHE.size() >= MAX_CACHED) CACHE.clear(); // crude bound; icons re-render on demand
 				CACHE.put(key, png);
+				failuresInARow = 0;
 				f.complete(png);
 			} catch (Throwable t) {
-				if (!broken) CvdsClient.LOG.warn("cvds: icon rendering failed, UI will fall back to text", t);
-				broken = true;
+				// One odd modded item shouldn't cost every icon; only give up if nothing renders.
+				FAILED.add(key);
+				if (++failuresInARow >= 10 && !broken) {
+					broken = true;
+					CvdsClient.LOG.warn("cvds: icon rendering keeps failing, UI will fall back to text", t);
+				}
 				f.completeExceptionally(t);
 			}
 		}

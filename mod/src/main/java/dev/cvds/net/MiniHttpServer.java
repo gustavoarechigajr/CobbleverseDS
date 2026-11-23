@@ -57,6 +57,7 @@ public final class MiniHttpServer implements Closeable {
 				pool.execute(() -> serve(s));
 			} catch (IOException e) {
 				if (!running) return;
+				try { Thread.sleep(100); } catch (InterruptedException ie) { return; } // e.g. out of file descriptors
 			}
 		}
 	}
@@ -145,7 +146,7 @@ public final class MiniHttpServer implements Closeable {
 		h.append("HTTP/1.1 ").append(r.status()).append(' ').append(reason(r.status())).append("\r\n");
 		h.append("Content-Type: ").append(r.contentType()).append("\r\n");
 		h.append("Content-Length: ").append(r.body().length).append("\r\n");
-		h.append("Cache-Control: no-store\r\n");
+		if (!r.headers().containsKey("Cache-Control")) h.append("Cache-Control: no-store\r\n");
 		h.append("Connection: close\r\n");
 		for (var e : r.headers().entrySet()) h.append(e.getKey()).append(": ").append(e.getValue()).append("\r\n");
 		h.append("\r\n");

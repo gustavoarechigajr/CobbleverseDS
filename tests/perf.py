@@ -15,7 +15,8 @@ args = ap.parse_args()
 
 
 def get(path, body=None, timeout=10):
-    req = urllib.request.Request(args.base + path, data=None if body is None else json.dumps(body).encode(), method="POST" if body else "GET")
+    req = urllib.request.Request(args.base + path, data=None if body is None else json.dumps(body).encode(), method="POST" if body else "GET",
+                                 headers={"X-CVDS": "1"} if body else {})
     with urllib.request.urlopen(req, timeout=timeout) as r:
         return json.loads(r.read())
 

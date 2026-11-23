@@ -87,7 +87,7 @@ public final class Snapshot {
 		o.add("items", items);
 		o.add("status", status(mc));
 		if (COBBLEMON) {
-			try { o.add("party", Party.json()); } catch (Throwable t) { o.addProperty("partyError", String.valueOf(t)); }
+			try { o.add("party", Party.json(items)); } catch (Throwable t) { o.addProperty("partyError", String.valueOf(t)); }
 			try { o.addProperty("battle", PcScreen.inBattle()); } catch (Throwable ignored) {}
 		}
 		return o;
@@ -127,6 +127,8 @@ public final class Snapshot {
 			if (!st.isEmpty()) {
 				so.addProperty("k", describe(st, items));
 				so.addProperty("n", st.getCount());
+				// per slot: tools of one kind share a key, but not their durability
+				if (st.isDamaged()) so.addProperty("d", Math.round(1000.0 * (1.0 - (double) st.getDamageValue() / st.getMaxDamage())) / 1000.0);
 			}
 			slots.add(so);
 		}
@@ -147,7 +149,6 @@ public final class Snapshot {
 			JsonObject d = new JsonObject();
 			d.addProperty("name", st.getHoverName().getString());
 			d.addProperty("max", st.getMaxStackSize());
-			if (st.isDamageableItem()) d.addProperty("dur", 1.0 - (double) st.getDamageValue() / st.getMaxDamage());
 			items.add(k, d);
 		}
 		return k;
