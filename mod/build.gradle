@@ -8,6 +8,11 @@ base { archivesName = project.archives_base_name }
 
 repositories {
 	mavenCentral()
+	// Cobblemon and Tom's Simple Storage, exactly the builds shipped in the Cobbleverse pack
+	exclusiveContent {
+		forRepository { maven { name = 'Modrinth'; url = 'https://api.modrinth.com/maven' } }
+		filter { includeGroup 'maven.modrinth' }
+	}
 }
 
 dependencies {
@@ -16,9 +21,10 @@ dependencies {
 	modImplementation "net.fabricmc:fabric-loader:${project.loader_version}"
 	modImplementation "net.fabricmc.fabric-api:fabric-api:${project.fabric_api_version}"
 
-	// Cobblemon is always present in the Cobbleverse pack; compile against the exact jar it ships.
-	modCompileOnly files('libs/Cobblemon-fabric-1.7.3+1.21.1.jar')
-	modCompileOnly files('libs/toms_storage_fabric-1.21-2.3.0.jar')
+	// Compile-only: the pack provides them at runtime. Versions are Modrinth version ids of
+	// Cobblemon 1.7.3+1.21.1 (kF7CvxTo) and Tom's Simple Storage 1.21-2.3.0-fabric (GwLz79tK).
+	modCompileOnly 'maven.modrinth:MdwFAVRL:kF7CvxTo'
+	modCompileOnly 'maven.modrinth:XZNI4Cpy:GwLz79tK'
 	compileOnly 'org.jetbrains.kotlin:kotlin-stdlib:2.1.0'
 
 	testImplementation 'org.junit.jupiter:junit-jupiter:5.11.4'

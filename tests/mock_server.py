@@ -164,7 +164,7 @@ class H(BaseHTTPRequestHandler):
             rs = [("minecraft:torch", "Torch", 4, True, ["1× Coal", "1× Stick"]), ("minecraft:book", "Book", 1, True, ["3× Paper", "1× Leather"]), ("minecraft:fishing_rod", "Fishing Rod", 1, True, ["3× Stick", "2× String"]), ("minecraft:iron_pickaxe", "Iron Pickaxe", 1, False, ["3× Iron Ingot", "2× Stick"])]
             return self.send(200, {"ok": True, "recipes": [{"id": k, "k": k, "name": n, "n": c, "can": can, "ings": ing} for k, n, c, can, ing in rs], "items": {}})
         if p == "/api/chat":
-            return self.send(200, {"ok": True, "lines": ["<PocketPotato1> anyone near the ice cave?", "[Server: Set the time to 1000]", "A wild Sinistea appeared!", "<PocketPotato1> got it"]})
+            return self.send(200, {"ok": True, "lines": ["<Trainer> anyone near the ice cave?", "[Server: Set the time to 1000]", "A wild Sinistea appeared!", "<Trainer> got it"]})
         self.send(404, {"ok": False, "error": "nope"})
 
     def do_POST(self):
