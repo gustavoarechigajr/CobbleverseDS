@@ -40,7 +40,7 @@ public final class Icons {
 		byte[] hit = CACHE.get(key);
 		if (hit != null) return hit;
 		if (broken || FAILED.contains(key)) return null;
-		if (!ItemKeys.SAMPLES.containsKey(key)) return null;
+		if (!ItemKeys.SAMPLES.containsKey(key) && !ItemKeys.sampleFromId(key)) return null;
 		CompletableFuture<byte[]> f = PENDING.computeIfAbsent(key, k -> {
 			QUEUE.add(k);
 			return new CompletableFuture<>();

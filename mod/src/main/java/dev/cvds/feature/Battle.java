@@ -52,8 +52,16 @@ final class Battle {
 			JsonArray moves = new JsonArray();
 			if (req.getMoveSet() != null) {
 				r.addProperty("trapped", req.getMoveSet().getTrapped());
+				var ms = req.getMoveSet();
+				var zs = ms.getCanZMove();
+				var maxes = ms.getMaxMoves();
+				int idx = 0;
 				for (InBattleMove mv : req.getMoveSet().getMoves()) {
 					JsonObject m = new JsonObject();
+					// The move this one becomes with Z-Power / Dynamax (null = no Z version for it).
+					int at = idx++;
+					try { if (zs != null && at < zs.size() && zs.get(at) != null) m.addProperty("zmove", gimmickName(zs.get(at).getMove())); } catch (Throwable ignored) {}
+					try { if (maxes != null && at < maxes.size() && maxes.get(at) != null) m.addProperty("maxmove", gimmickName(maxes.get(at).getMove())); } catch (Throwable ignored) {}
 					m.addProperty("id", mv.getId());
 					m.addProperty("pp", mv.getPp());
 					m.addProperty("maxPp", mv.getMaxpp());
@@ -85,6 +93,17 @@ final class Battle {
 				}
 			}
 			r.add("moves", moves);
+			// Mega Evolution, Ultra Burst, Z-Power, Dynamax, Terastallization (Cobblemon's Showdown gimmicks)
+			JsonArray gim = new JsonArray();
+			if (req.getMoveSet() != null) {
+				var ms2 = req.getMoveSet();
+				if (ms2.getCanMegaEvo()) gim.add("mega");
+				if (ms2.getCanUltraBurst()) gim.add("ultra");
+				if (ms2.getCanZMove() != null && ms2.getCanZMove().stream().anyMatch(java.util.Objects::nonNull)) gim.add("zmove");
+				if (ms2.getCanDynamax()) gim.add("max");
+				if (ms2.getCanTerastallize() != null) { gim.add("terastal"); r.addProperty("teraType", ms2.getCanTerastallize()); }
+			}
+			r.add("gimmicks", gim);
 			// Bench Pokémon that can be switched in.
 			JsonArray bench = new JsonArray();
 			var party = CobblemonClient.INSTANCE.getStorage().getParty();
@@ -104,6 +123,25 @@ final class Battle {
 			o.add("request", r);
 		}
 		return o;
+	}
+
+	/** Display name for a Z/Max move id like "gigavolthavoc" (falls back to the id). */
+	static String gimmickName(String id) {
+		MoveTemplate t = Moves.INSTANCE.getByName(id);
+		return t != null ? t.getDisplayName().getString() : id;
+	}
+
+	static boolean allowedGimmick(SingleActionRequest req, String g) {
+		var ms = req.getMoveSet();
+		if (ms == null) return false;
+		return switch (g) {
+			case "mega" -> ms.getCanMegaEvo();
+			case "ultra" -> ms.getCanUltraBurst();
+			case "zmove" -> ms.getCanZMove() != null;
+			case "max" -> ms.getCanDynamax();
+			case "terastal" -> ms.getCanTerastallize() != null;
+			default -> false;
+		};
 	}
 
 	static boolean isActive(ClientBattleSide side, UUID id) {
@@ -181,7 +219,9 @@ final class Battle {
 				if (t == null) return Api.error("that target can't be hit by this move");
 				pnx = t.getPNX();
 			}
-			req.setResponse(new MoveActionResponse(id, pnx, null));
+			String gimmick = a.has("gimmick") && !a.get("gimmick").isJsonNull() ? a.get("gimmick").getAsString() : null;
+			if (gimmick != null && !allowedGimmick(req, gimmick)) return Api.error("that can't be used this turn");
+			req.setResponse(new MoveActionResponse(id, pnx, gimmick));
 		} else if (op.equals("switch")) {
 			if (req.getMoveSet() != null && req.getMoveSet().getTrapped()) return Api.error("can't switch: trapped");
 			UUID id = UUID.fromString(a.get("id").getAsString());

@@ -11,6 +11,17 @@ public final class ItemKeys {
 	/** One sample stack per key so the icon renderer can draw it later. */
 	static final Map<String, ItemStack> SAMPLES = new ConcurrentHashMap<>();
 
+	/** Plain item ids ("minecraft:chest") can be drawn without having been seen: the UI's own icons. */
+	static boolean sampleFromId(String key) {
+		if (key.contains("#")) return false;
+		var id = net.minecraft.resources.ResourceLocation.tryParse(key);
+		if (id == null) return false;
+		var item = BuiltInRegistries.ITEM.getOptional(id);
+		if (item.isEmpty() || item.get() == net.minecraft.world.item.Items.AIR) return false;
+		SAMPLES.putIfAbsent(key, new ItemStack(item.get()));
+		return true;
+	}
+
 	public static String key(ItemStack stack) {
 		if (stack == null || stack.isEmpty()) return "";
 		String id = BuiltInRegistries.ITEM.getKey(stack.getItem()).toString();

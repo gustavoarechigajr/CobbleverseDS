@@ -38,13 +38,17 @@ final class Backpacks {
 					case "toString": return "cvds backpack visitor";
 					default: break;
 				}
-				Object wrapper = fromStack.invoke(null, (ItemStack) args[0]);
-				Object handler = wrapper.getClass().getMethod("getInventoryHandler").invoke(wrapper);
-				Method get = handler.getClass().getMethod("getStackInSlot", int.class);
-				int n = slotCount(handler);
-				for (int i = 0; i < n; i++) {
-					ItemStack s = (ItemStack) get.invoke(handler, i);
-					if (s != null && !s.isEmpty()) v.visit(new Slot(handler, i, s));
+				try { // one unreadable backpack shouldn't hide the others
+					Object wrapper = fromStack.invoke(null, (ItemStack) args[0]);
+					Object handler = wrapper.getClass().getMethod("getInventoryHandler").invoke(wrapper);
+					Method get = handler.getClass().getMethod("getStackInSlot", int.class);
+					int n = slotCount(handler);
+					for (int i = 0; i < n; i++) {
+						ItemStack s = (ItemStack) get.invoke(handler, i);
+						if (s != null && !s.isEmpty()) v.visit(new Slot(handler, i, s));
+					}
+				} catch (Throwable t) {
+					if (!warned) { warned = true; CvdsClient.LOG.warn("cvds: could not read a backpack", t); }
 				}
 				return false; // keep visiting every backpack
 			});
@@ -54,10 +58,14 @@ final class Backpacks {
 		}
 	}
 
+	/** The Fabric port's handler has getSlotCount() (an int); its getSlots() is the list of slot objects. */
 	private static int slotCount(Object handler) throws Exception {
-		for (String name : new String[]{"getSlots", "getSlotCount"}) {
-			try { return (int) handler.getClass().getMethod(name).invoke(handler); }
-			catch (NoSuchMethodException ignored) {}
+		for (String name : new String[]{"getSlotCount", "getSlots"}) {
+			Object r;
+			try { r = handler.getClass().getMethod(name).invoke(handler); }
+			catch (NoSuchMethodException ignored) { continue; }
+			if (r instanceof Integer n) return n;
+			if (r instanceof java.util.Collection<?> c) return c.size();
 		}
 		throw new NoSuchMethodException("slot count on " + handler.getClass());
 	}

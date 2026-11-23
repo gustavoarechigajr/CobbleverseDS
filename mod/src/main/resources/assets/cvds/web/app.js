@@ -543,6 +543,28 @@ async function loadKeys(force) {
   renderKeys();
 }
 
+// Keybinds that belong to a tab show up there as big shortcut keys (only if the pack registers them).
+const SHORTCUTS = {
+  storage: [['keybind.sophisticatedbackpacks.open_backpack', 'Backpack', 'sophisticatedbackpacks:diamond_backpack'],
+            ['key.toms_storage.open_terminal', 'Terminal', 'toms_storage:wireless_terminal'],
+            ['accessories.key.open_accessories_screen', 'Accessories', 'minecraft:leather_chestplate']],
+  party: [['key.cobblemon.summary', 'Summary', 'minecraft:book'], ['key.lumymon.dismount', 'Dismount', 'minecraft:saddle']],
+  pc: [['key.lumymon.access_pc', 'Open PC', 'cobblemon:pc']],
+  battle: [['key.fightorflight.startbattle', 'Battle an angry Pokémon', 'minecraft:iron_sword'],
+           ['key.cobblemon-battle-extras.battle_logs', 'Battle log', 'minecraft:writable_book']],
+  spawns: [['gui.xaero_open_map', 'World map', 'minecraft:filled_map'], ['gui.xaero_waypoints_key', 'Waypoints', 'minecraft:compass']],
+};
+function renderShortcuts() {
+  $$('.shortcuts[data-sc]').forEach(el => {
+    const html = (SHORTCUTS[el.dataset.sc] || []).filter(([id]) => keys.some(k => k.id === id)).map(([id, label, icon]) =>
+      `<button class="sc" data-kb="${esc(id)}" title="${esc((keys.find(k => k.id === id) || {}).bound || '')}"><img src="${iconUrl(icon)}" alt="" onerror="this.remove()">${esc(label)}</button>`).join('');
+    if (el.dataset.html !== html) { el.innerHTML = html; el.dataset.html = html; }
+  });
+  // in battle the Battle-an-angry-Pokémon key makes no sense; outside one, the battle log doesn't either
+  const inBattle = !!(battle && battle.active);
+  $$('.shortcuts[data-sc="battle"] [data-kb]').forEach(b => b.classList.toggle('hidden', (b.dataset.kb === 'key.fightorflight.startbattle') === inBattle));
+}
+
 // Keys that do something only while held: the panel toggles them (tap = hold down, tap again = let go).
 const HOLD_KEYS = new Set(['key.sneak', 'key.sprint', 'key.use', 'key.attack', 'key.forward', 'key.back', 'key.left', 'key.right', 'key.jump',
   'key.playerlist', 'zoomify.key.zoom', 'key.pingwheel.ping_location', 'key.cobblemon.ridingfreelook', 'key.cobblemonraiddens.mouse', 'key.catchrate.show_comparison']);
@@ -572,6 +594,7 @@ function keySections() {
 }
 
 function renderKeys() {
+  renderShortcuts();
   const q = $('#key-search').value.trim().toLowerCase();
   $('#key-favs').innerHTML = favs.map(id => keys.find(k => k.id === id)).filter(Boolean).map(keyButton).join('') || '<div class="note">No favourites yet.</div>';
   const cats = new Map();
@@ -970,6 +993,7 @@ function renderBattle() {
     $('#b-views').classList.add('hidden');
     $('#b-bag').classList.add('hidden');
     $('#b-note').textContent = 'Not in a battle. This tab opens by itself when one starts.';
+    renderShortcuts();
     return;
   }
   // Same as Cobblemon's "Press R to move around": hide the battle screen to walk, aim or throw a ball.
@@ -978,6 +1002,7 @@ function renderBattle() {
   view.classList.toggle('on', !!b.minimised);
   view.textContent = b.minimised ? 'Back to battle' : 'Move around';
   $('#b-views').classList.toggle('hidden', !!b.spectating);
+  renderShortcuts();
   renderBag();
   const foe = (b.theirs || [])[0];
   setHtml('#b-sides', (b.theirs || []).map(m => monCard(m, true)).join('') + (b.mine || []).map(m => monCard(m, false)).join(''));
@@ -986,6 +1011,7 @@ function renderBattle() {
   if (!r) {
     $('#b-note').textContent = b.spectating ? 'Spectating.' : 'Waiting for the turn…';
     lastTurnSig = '';
+    setHtml('#b-gimmicks', ''); $('#b-gimmicks').classList.add('hidden');
     setHtml('#b-moves', ''); // via setHtml, so the next identical render isn't skipped
     setHtml('#b-bench', ''); // via setHtml, so the next identical render isn't skipped
     $('#b-switch-h').classList.add('hidden');
@@ -1000,7 +1026,7 @@ function renderBattle() {
     const pow = m.power > 0 ? `Power ${Math.round(m.power)}` : '';
     const acc = m.acc > 0 ? `Acc ${Math.round(m.acc)}%` : '';
     return `<button class="mv" data-move="${esc(m.id)}" style="background:linear-gradient(180deg, ${col}, ${darken(col, .75)});${typeInk(m.type)}" ${m.disabled || m.pp <= 0 ? 'aria-disabled="true"' : ''}>
-      <span class="t">${esc(m.name)}</span>
+      <span class="t">${esc(gimmick === 'zmove' && m.zmove ? m.zmove : gimmick === 'max' && m.maxmove ? m.maxmove : m.name)}</span>
       <span class="row"><span>${esc(m.type || '')} · ${esc(m.cat || '')}${stab ? ' · STAB' : ''}</span><span>PP ${m.pp}/${m.maxPp}</span></span>
       <span class="row"><span>${pow} ${acc}</span></span>
       <span class="eff ${cls}">${m.pp <= 0 ? 'No PP left' : m.disabled ? 'Disabled this turn' : label}</span></button>`;
@@ -1010,12 +1036,33 @@ function renderBattle() {
   setHtml('#b-bench', (r.bench || []).map(p => `<button data-sw="${p.id}" ${why(p) ? 'disabled' : ''}>${esc(p.name)} Lv${p.lvl}<small>${why(p) || `${p.hp}/${p.maxHp} HP`}</small></button>`).join(''));
   // A new turn starts on the moves again (after using the Bag, say).
   // A new turn = the request comes back after a "waiting" stretch (an item use doesn't change PP).
-  if (!lastTurnSig) { lastTurnSig = 'turn'; if (bagView !== 'moves') { bagView = 'moves'; bagSel = null; } }
+  if (!lastTurnSig) { lastTurnSig = 'turn'; gimmick = null; if (bagView !== 'moves') { bagView = 'moves'; bagSel = null; } }
+  renderGimmicks(r);
 }
 let lastTurnSig = '';
+$('#b-gimmicks').addEventListener('click', e => {
+  const b = e.target.closest('[data-gim]');
+  if (!b) return;
+  gimmick = gimmick === b.dataset.gim ? null : b.dataset.gim;
+  if (gimmick) toast(`${GIMMICK[gimmick]} is on: tap a move to use it`, true);
+  setHtml('#b-moves', ''); // redraw names (Z / Max versions)
+  renderBattle();
+});
 const moveById = id => ((battle && battle.request && battle.request.moves) || []).find(m => m.id === id);
+// Battle gimmick picked for the next move (mega / ultra / zmove / max / terastal), cleared each turn.
+let gimmick = null;
+const GIMMICK = { mega: 'Mega Evolve', ultra: 'Ultra Burst', zmove: 'Z-Power', max: 'Dynamax', terastal: 'Terastallize' };
+function renderGimmicks(r) {
+  const list = (r && !r.forceSwitch && r.gimmicks) || [];
+  if (gimmick && !list.includes(gimmick)) gimmick = null;
+  const html = list.map(g => `<button data-gim="${g}" class="gim gim-${g}${gimmick === g ? ' on' : ''}">${GIMMICK[g] || g}${g === 'terastal' && r.teraType ? `<small>${esc(r.teraType)}</small>` : ''}</button>`).join('');
+  setHtml('#b-gimmicks', html);
+  $('#b-gimmicks').classList.toggle('hidden', !list.length);
+}
 async function chooseMove(id, target) {
-  await act(Object.assign({ kind: 'battle', op: 'move', id }, target ? { target } : {}));
+  const g = gimmick;
+  gimmick = null;
+  await act(Object.assign({ kind: 'battle', op: 'move', id }, target ? { target } : {}, g ? { gimmick: g } : {}));
   loadBattle();
 }
 function moveInfo(m) {
@@ -1277,6 +1324,9 @@ $('#quick-cmds').addEventListener('contextmenu', e => {
   renderQuick();
 });
 setInterval(() => { if (tab === 'chat') loadChat(); }, 2500);
+
+// Keybinds are needed by the shortcut keys on every tab: load them once the game is in a world.
+setInterval(() => { if (!keys.length && state && state.inGame) loadKeys(); }, 3000);
 
 // Swipe left/right on an empty part of a page to change tab (not on grids or controls that drag).
 (() => {

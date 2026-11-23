@@ -89,12 +89,22 @@ button.nav { min-width: 92px; font: 700 30px/1 var(--pixel); }
 
 /* tab rail: keys on the red shell */
 #tabs button {
-  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px;
   min-height: 0; min-width: 0; flex: 1; padding: 4px; border-radius: 14px;
   font: 600 23px/1 var(--pixel); color: var(--ink);
 }
 #tabs button svg { width: 44px; height: 44px; fill: currentColor; shape-rendering: crispEdges; }
 #tabs button.on { background: linear-gradient(180deg, var(--yellow-hi), var(--yellow)); }
+/* the game's own item renders as tab icons; the pixel SVG shows only until (or unless) they load */
+#tabs .ti { width: 58px; height: 58px; image-rendering: pixelated; filter: drop-shadow(0 3px 0 rgba(0, 0, 0, .22)); }
+#tabs button.img svg { display: none; }
+#tabs button:not(.img) .ti { display: none; }
+#tabs button.on .ti { transform: scale(1.08); }
+/* shortcut keys: keybinds that belong to a tab */
+.shortcuts { display: flex; gap: 10px; flex-wrap: wrap; }
+.shortcuts:empty { display: none; }
+.sc { display: inline-flex; align-items: center; gap: 8px; padding: 6px 18px 6px 8px; background: linear-gradient(180deg, #ffffff, #e4e8ee); }
+.sc img { width: 52px; height: 52px; image-rendering: pixelated; }
 
 input, select {
   font: 700 26px/1.1 var(--round); color: var(--ink);
@@ -287,6 +297,16 @@ details .keys { padding: 4px 0 14px; }
 #tab-battle > * { flex-shrink: 0; }
 #b-moves { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-content: start; }
 #b-switch-h { margin-top: 6px; }
+/* battle gimmicks: one big toggle each, coloured like the games */
+#b-gimmicks { display: flex; gap: 12px; flex-wrap: wrap; }
+.gim { flex: 1; min-height: 76px; font: 600 26px/1 var(--pixel); color: #fff; text-shadow: 2px 2px 0 rgba(0, 0, 0, .4); display: flex; align-items: center; justify-content: center; gap: 10px; }
+.gim small { font: 800 19px var(--round); }
+.gim-mega { background: linear-gradient(135deg, #f2b3ff, #8a4dff 55%, #ff8a3d); }
+.gim-ultra { background: linear-gradient(135deg, #fff6a3, #e7b800); color: var(--ink); text-shadow: none; }
+.gim-zmove { background: linear-gradient(135deg, #7af0ff, #2e8fe0 50%, #ffcf3a); }
+.gim-max { background: linear-gradient(135deg, #ff6a6a, #c3002f); }
+.gim-terastal { background: linear-gradient(135deg, #b8f2ff, #6fd1ff 40%, #ff9ef0); color: var(--ink); text-shadow: none; }
+.gim.on { outline: 5px solid var(--yellow-hi); outline-offset: 2px; transform: translateY(3px); box-shadow: 0 2px 0 var(--ink); }
 /* Moves / Bag / Poké Balls: three big keys */
 .seg.views { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; }
 .seg.views button { min-height: 76px; font: 600 28px/1 var(--pixel); }

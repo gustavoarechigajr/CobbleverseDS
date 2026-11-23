@@ -82,6 +82,19 @@ soon as a run is done. Don't loop `KEYCODE_WAKEUP`.
 - **Item keys** leave out durability (it's per slot as `d`), otherwise every damage point is a new key and icon.
 - **Security:** POSTs need header `X-CVDS: 1`; Host/Origin must be localhost. Use `curl -H 'X-CVDS: 1'`.
 - **Class names** in production are intermediary (`class_490`); don't assert on them in tests.
+- **The panel is Android WebView 109** (Chrome 109): no CSS `color-mix()`, no `:has()` assumptions; the desktop preview
+  won't catch it. Size rules for the 1240×1080 / ~320 dpi screen are at the top of `app.css` (26 px text, 80 px targets).
+- **`setHtml` caches**: clear an element with `setHtml(sel, '')`, never `innerHTML = ''`, or the next identical render
+  is skipped (this blanked the battle moves/Switch after every turn).
+- **Sophisticated Backpacks (Fabric port)**: read via reflection in `Backpacks.java`; its handler's `getSlots()` is a
+  *list*, use `getSlotCount()`. Worn (Accessories) backpacks are covered by `PlayerInventoryProvider.runOnBackpacks`.
+- **Creative mode** doesn't consume thrown balls or used items; a "duplicate" in a creative test world is expected.
+- **Zalith touch is a trackpad**: a tap clicks where the cursor *is*. Move it with `input -d 0 swipe` (≈1:1), check the
+  hover highlight in a screenshot, then tap. Zalith's on-screen "E" button covers the world list's Back button; use
+  `input keyevent KEYCODE_ESCAPE`. With debug off the game doesn't auto-join: Singleplayer → select → `KEYCODE_ENTER`.
+- **Starting a wild battle without debug**: `/spawnpokemonat X Y Z magikarp level=2` in front, swipe the view onto it,
+  then press `key.cobblemon.throwpartypokemon` with a Pokémon out.
+- `/save-all` doesn't exist in singleplayer: don't force-stop the game expecting a save (autosave is every 5 min).
 
 ## Status (2026-11-23)
 Done and tested on the Thor: storage panel (any container, tap-tap moves, sort, bulk), crafting (2×2, table, Tom's
