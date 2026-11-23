@@ -88,6 +88,7 @@ public final class Snapshot {
 		o.add("status", status(mc));
 		if (COBBLEMON) {
 			try { o.add("party", Party.json()); } catch (Throwable t) { o.addProperty("partyError", String.valueOf(t)); }
+			try { o.addProperty("battle", PcScreen.inBattle()); } catch (Throwable ignored) {}
 		}
 		return o;
 	}

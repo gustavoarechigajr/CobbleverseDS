@@ -647,6 +647,62 @@ def toms_storage_terminal(env):
 
 
 @test
+def battle_helper(env):
+    """Cobblemon only: start a wild battle, read both sides, pick a move from the panel."""
+    env.reset()
+    if "party" not in state():
+        print("  (skipped: Cobblemon not loaded)")
+        return
+    env.cmd("execute as @a run stopbattle @s")
+    env.cmd("execute as @a run clearparty @s")
+    env.cmd("execute as @a run pokegive @s pikachu level=60")
+    wait_for(lambda s: s["party"]["slots"][0].get("name"), 6, "pikachu in party")
+    action(kind="party", slot=0)
+    env.cmd("kill @e[type=cobblemon:pokemon]")
+    # Cobblemon's own battle builder (throwing a Pokémon at a wild one is up to the player)
+    debug(op="wildBattle", pokemon="magikarp level=2")
+    wait_for(lambda s: s.get("battle") is True, 10, "battle start")
+    deadline = time.time() + 10
+    b = http("/api/battle")
+    while not b.get("request") and time.time() < deadline:
+        time.sleep(0.5)
+        b = http("/api/battle")
+    assert b["active"] and b["request"], b
+    foe = b["theirs"][0]
+    assert foe["species"].lower() == "magikarp" and [t.lower() for t in foe["types"]] == ["water"], foe
+    assert not foe["flat"] and 0 < foe["hp"] <= 1, foe
+    me = b["mine"][0]
+    assert me["species"].lower() == "pikachu" and me["flat"], me
+    moves = b["request"]["moves"]
+    assert moves and all(m["name"] and m["maxPp"] > 0 for m in moves), moves
+    assert any((m.get("type") or "").lower() == "electric" for m in moves), [m.get("type") for m in moves]
+    assert b["request"]["singles"] is True
+    bad = action(kind="battle", op="move", id="not-a-move")
+    assert bad["ok"] is False, bad
+    move = next(m for m in moves if not m["disabled"] and m["pp"] > 0 and m.get("cat") != "status")
+    pp_before = move["pp"]
+    assert action(kind="battle", op="move", id=move["id"])["ok"]
+    # the turn plays out: either the battle ends (Magikarp fainted) or the move's PP went down
+    deadline = time.time() + 25
+    while time.time() < deadline:
+        s = state()
+        if not s.get("battle"):
+            break
+        b2 = http("/api/battle")
+        r2 = b2.get("request")
+        if r2:
+            mv2 = next((m for m in r2["moves"] if m["id"] == move["id"]), None)
+            if mv2 and mv2["pp"] < pp_before:
+                break
+        time.sleep(0.5)
+    else:
+        raise AssertionError("choosing a move from the panel did not advance the battle")
+    env.cmd("execute as @a run stopbattle @s")
+    env.cmd("kill @e[type=cobblemon:pokemon]")
+    wait_for(lambda s: not s.get("battle"), 8, "battle end")
+
+
+@test
 def stress_rapid_actions(env):
     """Spam moves like an impatient player; nothing may be lost or left on the cursor."""
     env.reset()

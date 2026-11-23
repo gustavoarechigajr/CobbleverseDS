@@ -19,6 +19,7 @@ becomes a touch panel for the things a controller is bad at.
 | Keys | Every keybind from every mod, grouped by mod, plus a favourites row. Tap to press. |
 | Party | Cobblemon party with HP, level, status, types and held item. Tap to select, and a button to send out or recall. |
 | PC | Cobblemon PC: browse every box with real model icons, see the party alongside, tap one Pokémon then another slot to move or swap (box↔box, box↔party, party↔party), sort a box, search all boxes (name, type, nature, ability, "shiny"), and view nature, ability, IVs and moves. Release needs two taps and is checked against the exact Pokémon you saw. Changes need the PC open in game (the server only accepts PC actions then); otherwise you browse the last-opened copy. |
+| Battle | Opens by itself when a Cobblemon battle starts. Shows both sides' active Pokémon (HP, types, status, stat stages). Big move buttons show type, PP, power and accuracy, STAB, and effectiveness against the opponent (×4 to immune). Tap a move to use it, or switch Pokémon. Targets are chosen the way Cobblemon's own screen does it. In double battles it's info only. |
 | Chat | Chat and commands with the Android keyboard, plus saved one-tap commands (☆ saves, long-press removes). |
 
 The status bar shows coordinates, biome, day and time, weather, whether you can sleep, health, food and level.
@@ -40,6 +41,7 @@ The status bar shows coordinates, biome, day and time, weather, whether you can 
 The app's window never takes input focus (except while you type), so the controller stays with the game.
 
 ## Tests
+- UI: `cd tests && npm install && node ui_test.js` runs the real page in jsdom against a fake server (tab auto-switching, tap-tap moves, battle/PC/terminal panels, idle blackout). `node tests/typechart_test.js` checks the type chart.
 - Unit tests: `cd mod && ./gradlew test` (HTTP parsing, and fuzzing of the move and sort planner against a model of vanilla click rules).
 - Integration: start the game with debug on (`-Dcvds.debug=true`, or `"debug": true` in
   `config/cvds.json`), then `python3 -I tests/integration.py --world cvds-test`. Use a

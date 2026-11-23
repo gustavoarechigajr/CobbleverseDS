@@ -54,6 +54,10 @@ public final class Api implements dev.cvds.net.MiniHttpServer.Handler {
 					return sig.equals(since) ? "{\"same\":true,\"sig\":\"" + sig + "\"}" : "{\"sig\":\"" + sig + "\"," + body.substring(1);
 				});
 			}
+			case "/api/battle": {
+				if (!Snapshot.COBBLEMON) return Response.json(error("cobblemon not installed").toString());
+				return onClient(mc, () -> mc.player == null ? error("not in game") : Battle.json(mc));
+			}
 			case "/api/recipes": {
 				String q = req.query().getOrDefault("q", "");
 				return onClient(mc, () -> mc.player == null ? error("not in game") : Crafting.search(mc, q, 60));
@@ -87,6 +91,7 @@ public final class Api implements dev.cvds.net.MiniHttpServer.Handler {
 				yield ok();
 			}
 			case "terminal" -> Snapshot.TOMS ? Terminal.take(mc, a.get("k").getAsString(), a.has("one") && a.get("one").getAsBoolean()) : error("Tom's Simple Storage not installed");
+			case "battle" -> Snapshot.COBBLEMON ? Battle.choose(mc, a) : error("cobblemon not installed");
 			case "pc" -> Snapshot.COBBLEMON ? Pc.action(mc, a) : error("cobblemon not installed");
 			case "hotbarSelect" -> {
 				int s = a.get("slot").getAsInt();

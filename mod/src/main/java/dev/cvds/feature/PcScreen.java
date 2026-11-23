@@ -6,4 +6,5 @@ import net.minecraft.client.gui.screens.Screen;
 final class PcScreen {
 	private PcScreen() {}
 	static boolean isPc(Screen s) { return s instanceof com.cobblemon.mod.common.client.gui.pc.PCGUI; }
+	static boolean inBattle() { return com.cobblemon.mod.common.client.CobblemonClient.INSTANCE.getBattle() != null; }
 }

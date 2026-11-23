@@ -14,6 +14,7 @@ let tab = 'storage';
 let mode = 'move';
 let selected = null; // slot index picked as the source of a move
 let lastScreenKind = null;
+let lastMenuId = 0;
 let busy = false;
 let lastGridSig = ''; // menu + items JSON; the grid is only rebuilt when it changes
 
@@ -46,7 +47,7 @@ async function pollLoop() {
       if (s.rev !== rev) {
         rev = s.rev;
         state = s;
-        render();
+        try { render(); } catch (e) { console.error(e); toast('UI error: ' + e.message); }
       }
     } catch (e) {
       setStatus('Waiting for the game…', '');
@@ -95,6 +96,7 @@ function showTab(name) {
   if (name === 'craft') loadRecipes();
   if (name === 'chat') loadChat();
   if (name === 'pc') { pcSig = ''; loadPc(); }
+  if (name === 'battle') loadBattle();
   render();
 }
 $$('#tabs button').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
@@ -103,12 +105,17 @@ function render() {
   renderStatus();
   if (!state || !state.inGame) return;
   const kind = state.screen && state.screen.kind;
-  if (kind !== lastScreenKind) {
-    if (kind === 'container' && lastScreenKind !== null) { showTab('storage'); wake(); }
-    if (kind === 'pc' && lastScreenKind !== null) { showTab('pc'); wake(); }
-    if (kind === 'container' && tab === 'craft') loadRecipes();
+  const menuId = state.menu ? state.menu.id : 0;
+  if (kind !== lastScreenKind || (kind === 'container' && menuId !== lastMenuId)) {
+    // Record the new kind first: showTab() re-enters render().
+    const prev = lastScreenKind;
     lastScreenKind = kind;
+    lastMenuId = menuId;
+    if (kind === 'container' && prev !== null) { showTab('storage'); wake(); }
+    if (kind === 'pc' && prev !== null) { showTab('pc'); wake(); }
+    if (kind === 'container' && tab === 'craft') loadRecipes();
   }
+  battleWatch();
   if (tab === 'storage') { renderGrid(); if (netActive() && !net) loadNet(); }
   if (tab === 'party') renderParty();
 }
@@ -621,6 +628,119 @@ $('#pc-release').addEventListener('click', e => {
   pcAct({ op: 'release', at, id: m.id });
 });
 pcLoop();
+
+
+// ---------- battle helper ----------
+const TYPES = ['normal','fire','water','electric','grass','ice','fighting','poison','ground','flying','psychic','bug','rock','ghost','dragon','dark','steel','fairy'];
+// CHART[attacker] = {defender: multiplier}; anything missing is 1x (standard Gen 6+ chart).
+const CHART = {
+  normal: { rock: .5, ghost: 0, steel: .5 },
+  fire: { fire: .5, water: .5, grass: 2, ice: 2, bug: 2, rock: .5, dragon: .5, steel: 2 },
+  water: { fire: 2, water: .5, grass: .5, ground: 2, rock: 2, dragon: .5 },
+  electric: { water: 2, electric: .5, grass: .5, ground: 0, flying: 2, dragon: .5 },
+  grass: { fire: .5, water: 2, grass: .5, poison: .5, ground: 2, flying: .5, bug: .5, rock: 2, dragon: .5, steel: .5 },
+  ice: { fire: .5, water: .5, grass: 2, ice: .5, ground: 2, flying: 2, dragon: 2, steel: .5 },
+  fighting: { normal: 2, ice: 2, poison: .5, flying: .5, psychic: .5, bug: .5, rock: 2, ghost: 0, dark: 2, steel: 2, fairy: .5 },
+  poison: { grass: 2, poison: .5, ground: .5, rock: .5, ghost: .5, steel: 0, fairy: 2 },
+  ground: { fire: 2, electric: 2, grass: .5, poison: 2, flying: 0, bug: .5, rock: 2, steel: 2 },
+  flying: { electric: .5, grass: 2, fighting: 2, bug: 2, rock: .5, steel: .5 },
+  psychic: { fighting: 2, poison: 2, psychic: .5, dark: 0, steel: .5 },
+  bug: { fire: .5, grass: 2, fighting: .5, poison: .5, flying: .5, psychic: 2, ghost: .5, dark: 2, steel: .5, fairy: .5 },
+  rock: { fire: 2, ice: 2, fighting: .5, ground: .5, flying: 2, bug: 2, steel: .5 },
+  ghost: { normal: 0, psychic: 2, ghost: 2, dark: .5 },
+  dragon: { dragon: 2, steel: .5, fairy: 0 },
+  dark: { fighting: .5, psychic: 2, ghost: 2, dark: .5, fairy: .5 },
+  steel: { fire: .5, water: .5, electric: .5, ice: 2, rock: 2, steel: .5, fairy: 2 },
+  fairy: { fire: .5, fighting: 2, poison: .5, dragon: 2, dark: 2, steel: .5 },
+};
+const TYPE_COLOR = { normal: '#9fa19f', fire: '#e62829', water: '#2980ef', electric: '#fac000', grass: '#3fa129', ice: '#3dcef3', fighting: '#ff8000', poison: '#9141cb', ground: '#915121', flying: '#81b9ef', psychic: '#ef4179', bug: '#91a119', rock: '#afa981', ghost: '#704170', dragon: '#5060e1', dark: '#624d4e', steel: '#60a1b8', fairy: '#ef70ef' };
+function effectiveness(moveType, defTypes) {
+  const row = CHART[(moveType || '').toLowerCase()];
+  if (!row) return null;
+  return (defTypes || []).reduce((m, t) => m * (row[t.toLowerCase()] ?? 1), 1);
+}
+function effLabel(x) {
+  if (x == null) return ['', ''];
+  if (x === 0) return ['No effect', 'eff-0'];
+  if (x >= 4) return ['Super effective ×4', 'eff-4'];
+  if (x >= 2) return ['Super effective ×2', 'eff-2'];
+  if (x <= .25) return ['Not very effective ×¼', 'eff-025'];
+  if (x < 1) return ['Not very effective ×½', 'eff-05'];
+  return ['Normal ×1', ''];
+}
+let battle = null, battleTimer = null, tabBeforeBattle = null, wasInBattle = false;
+async function loadBattle() {
+  try { battle = await api('/api/battle'); renderBattle(); } catch (e) { $('#b-note').textContent = e.message; }
+}
+function hpBar(m) {
+  const frac = m.flat ? (m.maxHp ? m.hp / m.maxHp : 0) : m.hp;
+  const hue = Math.round(Math.max(0, Math.min(1, frac)) * 120);
+  const txt = m.flat ? `${Math.round(m.hp)}/${Math.round(m.maxHp)} HP` : `${Math.round(frac * 100)}% HP`;
+  return `<div class="sub">${txt}</div><div class="hp"><i style="width:${Math.round(frac * 100)}%;background:hsl(${hue},75%,45%)"></i></div>`;
+}
+function typePills(types) { return (types || []).map(t => `<span class="pill" style="background:${TYPE_COLOR[t.toLowerCase()] || '#555'}">${esc(t)}</span>`).join(''); }
+function monCard(m, foe) {
+  const st = Object.entries(m.stages || {}).map(([k, v]) => `<span class="stage ${v > 0 ? 'up' : 'down'}">${esc(k.toUpperCase())} ${v > 0 ? '+' : ''}${v}</span>`).join('');
+  return `<div class="bm ${foe ? 'foe' : ''}"><div class="nm">${esc(m.name)}${m.shiny ? ' ★' : ''} <span class="sub">Lv ${m.lvl}${m.status ? ' · ' + esc(m.status.toUpperCase()) : ''}</span></div>
+    ${hpBar(m)}<div style="margin-top:6px">${typePills(m.types)}</div><div>${st}</div></div>`;
+}
+function renderBattle() {
+  const b = battle;
+  if (!b || !b.active) {
+    $('#b-sides').innerHTML = '';
+    $('#b-moves').innerHTML = '';
+    $('#b-bench').innerHTML = '';
+    $('#b-switch-h').classList.add('hidden');
+    $('#b-note').textContent = 'Not in a battle. This tab opens by itself when one starts.';
+    return;
+  }
+  const foe = (b.theirs || [])[0];
+  $('#b-sides').innerHTML = (b.theirs || []).map(m => monCard(m, true)).join('') + (b.mine || []).map(m => monCard(m, false)).join('');
+  const r = b.request;
+  const myTypes = ((b.mine || [])[0] || {}).types || [];
+  if (!r) {
+    $('#b-note').textContent = b.spectating ? 'Spectating.' : 'Waiting for the turn…';
+    $('#b-moves').innerHTML = '';
+    $('#b-bench').innerHTML = '';
+    $('#b-switch-h').classList.add('hidden');
+    return;
+  }
+  $('#b-note').textContent = r.forceSwitch ? 'Choose a Pokémon to send in.' : r.singles ? 'Tap a move.' : 'Double battle: info only. Pick moves and targets on the game screen.';
+  $('#b-moves').innerHTML = r.forceSwitch ? '' : (r.moves || []).map(m => {
+    const [label, cls] = foe ? effLabel(m.cat === 'status' ? null : effectiveness(m.type, foe.types)) : ['', ''];
+    const stab = myTypes.some(t => t.toLowerCase() === (m.type || '').toLowerCase()) && m.cat !== 'status';
+    const col = TYPE_COLOR[(m.type || '').toLowerCase()] || '#555';
+    const pow = m.power > 0 ? `Power ${Math.round(m.power)}` : '';
+    const acc = m.acc > 0 ? `Acc ${Math.round(m.acc)}%` : '';
+    return `<button class="mv" data-move="${esc(m.id)}" style="border-color:${col};background:linear-gradient(135deg, ${col}55, var(--panel2))" ${m.disabled || m.pp <= 0 || !r.singles ? 'disabled' : ''}>
+      <span class="t">${esc(m.name)}</span>
+      <span class="row"><span>${esc(m.type || '')} · ${esc(m.cat || '')}${stab ? ' · STAB' : ''}</span><span>PP ${m.pp}/${m.maxPp}</span></span>
+      <span class="row"><span>${pow} ${acc}</span></span>
+      <span class="eff ${cls}">${label}</span></button>`;
+  }).join('');
+  $('#b-switch-h').classList.remove('hidden');
+  $('#b-bench').innerHTML = (r.bench || []).map(p => `<button data-sw="${p.id}" ${p.active || p.hp <= 0 || r.trapped ? 'disabled' : ''}>${esc(p.name)} Lv${p.lvl} · ${p.hp}/${p.maxHp}${p.active ? ' (in battle)' : ''}</button>`).join('');
+}
+$('#b-moves').addEventListener('click', async e => {
+  const b = e.target.closest('[data-move]');
+  if (!b || b.disabled) return;
+  await act({ kind: 'battle', op: 'move', id: b.dataset.move });
+  loadBattle();
+});
+$('#b-bench').addEventListener('click', async e => {
+  const b = e.target.closest('[data-sw]');
+  if (!b || b.disabled) return;
+  await act({ kind: 'battle', op: 'switch', id: b.dataset.sw });
+  loadBattle();
+});
+setInterval(() => { if (tab === 'battle') loadBattle(); }, 600);
+function battleWatch() {
+  const now = !!(state && state.battle);
+  const was = wasInBattle;
+  wasInBattle = now; // before showTab(), which re-enters render()
+  if (now && !was) { tabBeforeBattle = tab; showTab('battle'); wake(); }
+  if (!now && was && tab === 'battle' && tabBeforeBattle) showTab(tabBeforeBattle);
+}
 
 // ---------- chat ----------
 let quick = store.get('quick', []);

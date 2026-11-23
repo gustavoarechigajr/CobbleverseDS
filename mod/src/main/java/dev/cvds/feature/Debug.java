@@ -45,6 +45,11 @@ public final class Debug {
 				BlockPos p = new BlockPos(a.get("x").getAsInt(), a.get("y").getAsInt(), a.get("z").getAsInt());
 				mc.gameMode.useItemOn(mc.player, InteractionHand.MAIN_HAND, new BlockHitResult(Vec3.atCenterOf(p), Direction.UP, p, false));
 			}
+			case "wildBattle" -> {
+				var server = mc.getSingleplayerServer();
+				if (server == null || !Snapshot.COBBLEMON) return Api.error("needs singleplayer + Cobblemon");
+				DebugBattle.wildBattle(server, a.get("pokemon").getAsString());
+			}
 			case "closeScreen" -> { if (mc.player != null) mc.player.closeContainer(); else mc.setScreen(null); }
 			case "enterWorld" -> {
 				// World loading runs its own wait loop and deadlocks inside a queued task, so it is

@@ -7,3 +7,4 @@ android/build/
 *.keystore
 tests/__pycache__/
 mod/devmods/
+tests/node_modules/
