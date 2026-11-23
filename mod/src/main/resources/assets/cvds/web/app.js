@@ -84,7 +84,7 @@ function renderStatus() {
   const weather = s.thunder ? 'Thunder' : s.rain ? 'Rain' : 'Clear';
   const sleepTxt = s.canSleep ? ' · Can sleep' : '';
   setStatus(`${s.x}, ${s.y}, ${s.z} · ${s.biomeName || s.biome || ''}`,
-    `Day ${s.day} ${clock(s.time)} · ${weather}${sleepTxt} · ♥ ${Math.ceil(s.hp)}/${Math.round(s.maxHp)} · 🍗 ${s.food} · Lv ${s.xp}`);
+    `${s.fps != null ? s.fps + ' fps · ' : ''}Day ${s.day} ${clock(s.time)} · ${weather}${sleepTxt} · ♥ ${Math.ceil(s.hp)}/${Math.round(s.maxHp)} · 🍗 ${s.food} · Lv ${s.xp}`);
 }
 
 // ---------- tabs ----------

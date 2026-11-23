@@ -177,6 +177,10 @@ public final class Snapshot {
 		s.addProperty("food", mc.player.getFoodData().getFoodLevel());
 		s.addProperty("xp", mc.player.experienceLevel);
 		s.addProperty("hotbar", mc.player.getInventory().selected);
+		s.addProperty("fps", mc.getFps());
+		Runtime rt = Runtime.getRuntime();
+		s.addProperty("memUsedMb", (rt.totalMemory() - rt.freeMemory()) >> 20);
+		s.addProperty("memMaxMb", rt.maxMemory() >> 20);
 		return s;
 	}
 }
