@@ -26,14 +26,8 @@
   <main>
     <section id="tab-storage" class="tab on">
       <div class="bar">
-        <div class="seg" id="modes">
-          <button data-mode="move" class="on">Move</button>
-          <button data-mode="half">Half</button>
-          <button data-mode="one">One</button>
-          <button data-mode="quick">Quick</button>
-          <button data-mode="hotbar">Hotbar</button>
-        </div>
         <input id="inv-search" type="search" placeholder="Find item" autocomplete="off">
+        <button id="more" class="hidden">More…</button>
       </div>
       <div class="bar" id="bulk">
         <button data-bulk="take">Take all</button>
@@ -44,9 +38,8 @@
       </div>
       <div class="bar hidden" id="selbar">
         <span id="sel-name"></span>
-        <button data-sel="all-like">Move all like this</button>
-        <button data-sel="drop1">Drop 1</button>
-        <button data-sel="drop">Drop stack</button>
+        <span class="note" id="sel-hint">Tap where it goes</span>
+        <button data-sel="options">Options…</button>
         <button data-sel="cancel">Cancel</button>
       </div>
       <div class="bar hidden" id="hotbarbar"></div>
@@ -57,7 +50,7 @@
           <span id="net-info" class="note"></span>
         </div>
         <div id="net-grid"></div>
-        <div class="note">Tap = take a stack · hold = take one · in your inventory below, tap Quick (or hold an item) to store it</div>
+        <div class="note">Tap = take a stack · hold for more (take one, pin) · hold an item below to store it</div>
       </div>
       <div id="grid-wrap"><div id="screen-title"></div><div id="grid"></div></div>
     </section>
@@ -67,14 +60,14 @@
       <div id="recipes" class="cards"></div>
     </section>
     <section id="tab-keys" class="tab">
-      <div class="bar"><input id="key-search" type="search" placeholder="Filter keybinds" autocomplete="off"><button id="key-refresh">Reload</button></div>
-      <h3>Favourites <small>(tap ☆ to add)</small></h3>
+      <div class="bar"><input id="key-search" type="search" placeholder="Filter keybinds" autocomplete="off"><button id="key-sections">Sections…</button><button id="key-refresh">Reload</button></div>
+      <h3>Favourites <small>(tap ☆ to add · hold one to reorder)</small></h3>
       <div id="key-favs" class="keys"></div>
       <div id="key-list"></div>
     </section>
     <section id="tab-party" class="tab">
       <div id="party" class="party"></div>
-      <div class="bar"><button id="party-send" class="big">Send out / recall selected</button><span class="note">Tap to select · tap ⇅ then another slot to reorder</span></div>
+      <div class="note">Tap a Pokémon for its summary · drag one onto another slot to reorder</div>
     </section>
     <section id="tab-pc" class="tab">
       <div class="bar">
@@ -86,20 +79,30 @@
       <div id="pc-note" class="note"></div>
       <div id="pc-results" class="chips hidden"></div>
       <div id="pc-main">
-        <div id="pc-grid"></div>
-        <div id="pc-party"></div>
+        <div id="pc-left">
+          <div id="pc-grid"></div>
+          <div id="pc-party"></div>
+        </div>
         <div id="pc-detail" class="note">Tap a Pokémon to see details. Tap one, then tap another slot to move or swap them.</div>
       </div>
       <div class="bar">
         <select id="pc-sortmode"></select>
         <button id="pc-sort">Sort box</button>
+        <button id="pc-multi">Select several</button>
+        <button id="pc-multi-move" class="hidden">Move to box…</button>
         <button id="pc-release" class="danger hidden">Release</button>
       </div>
     </section>
     <section id="tab-battle" class="tab">
       <div id="b-sides"></div>
-      <div id="b-note" class="note"></div>
+      <div class="bar" id="b-top"><div id="b-note" class="note"></div><button id="b-view" class="hidden">Move around</button></div>
+      <div class="seg views hidden" id="b-views">
+        <button data-bv="moves" class="on">Moves</button>
+        <button data-bv="bag">Bag</button>
+        <button data-bv="balls">Poké Balls</button>
+      </div>
       <div id="b-moves"></div>
+      <div id="b-bag" class="hidden"></div>
       <h3 id="b-switch-h">Switch</h3>
       <div id="b-bench" class="chips"></div>
     </section>
@@ -108,6 +111,7 @@
         <button id="sp-refresh">Check here</button>
         <label class="note"><input id="sp-missing" type="checkbox"> Only not caught</label>
         <span id="sp-where" class="note"></span>
+        <span class="note">Tap a Pokémon to track it</span>
       </div>
       <div id="sp-list"></div>
     </section>
@@ -118,6 +122,7 @@
     </section>
   </main>
 </div>
+<div id="sheet" class="hidden"><div class="panel" role="dialog" aria-modal="true"></div></div>
 <div id="toast"></div>
 <script src="app.js"></script>
 </body>

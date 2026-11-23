@@ -12,6 +12,8 @@ import net.minecraft.client.resources.language.I18n;
 public final class Keys {
 	private Keys() {}
 	private static final List<KeyMapping> HELD = new ArrayList<>();
+	/** Keys the panel is holding down until told to let go (sneak, sprint, zoom, auto-walk...). */
+	private static final Set<String> STICKY = Collections.synchronizedSet(new LinkedHashSet<>());
 
 	public static JsonArray list(Minecraft mc) {
 		JsonArray arr = new JsonArray();
@@ -21,6 +23,7 @@ public final class Keys {
 			o.addProperty("label", I18n.get(k.getName()));
 			o.addProperty("cat", I18n.get(k.getCategory()));
 			o.addProperty("bound", k.isUnbound() ? "" : k.getTranslatedKeyMessage().getString());
+			o.addProperty("held", STICKY.contains(k.getName()));
 			arr.add(o);
 		}
 		return arr;
@@ -39,11 +42,35 @@ public final class Keys {
 		return false;
 	}
 
+	/** Holds a key down (true) until released (false). */
+	public static boolean hold(Minecraft mc, String id, boolean down) {
+		for (KeyMapping k : mc.options.keyMappings) {
+			if (!k.getName().equals(id)) continue;
+			if (down) {
+				if (STICKY.add(id)) {
+					KeyMappingAccessor acc = (KeyMappingAccessor) k;
+					acc.cvds$setClickCount(acc.cvds$getClickCount() + 1);
+				}
+				k.setDown(true);
+			} else {
+				STICKY.remove(id);
+				k.setDown(false);
+			}
+			return true;
+		}
+		return false;
+	}
+
 	private static final List<KeyMapping> RELEASE = new ArrayList<>();
 
 	public static void tick() {
+		// Minecraft releases every key when a screen opens or focus changes: re-assert held ones.
+		if (!STICKY.isEmpty()) {
+			var mc = Minecraft.getInstance();
+			if (mc.options != null) for (KeyMapping k : mc.options.keyMappings) if (STICKY.contains(k.getName())) k.setDown(true);
+		}
 		synchronized (HELD) {
-			for (KeyMapping k : RELEASE) k.setDown(false);
+			for (KeyMapping k : RELEASE) if (!STICKY.contains(k.getName())) k.setDown(false);
 			RELEASE.clear();
 			RELEASE.addAll(HELD);
 			HELD.clear();

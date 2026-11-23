@@ -161,6 +161,9 @@ public final class Snapshot {
 		s.addProperty("y", p.getY());
 		s.addProperty("z", p.getZ());
 		s.addProperty("dim", mc.level.dimension().location().toString());
+		var sp = mc.getSingleplayerServer();
+		if (sp != null) s.addProperty("world", sp.getWorldData().getLevelName());
+		else if (mc.getCurrentServer() != null) s.addProperty("world", mc.getCurrentServer().name);
 		mc.level.getBiome(p).unwrapKey().ifPresent(k -> {
 			s.addProperty("biome", k.location().toString());
 			s.addProperty("biomeName", net.minecraft.client.resources.language.I18n.get("biome." + k.location().getNamespace() + "." + k.location().getPath()));

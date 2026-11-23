@@ -39,7 +39,12 @@ public final class Api implements dev.cvds.net.MiniHttpServer.Handler {
 		Minecraft mc = Minecraft.getInstance();
 		switch (path) {
 			case "/api/keys": return onClient(mc, () -> mc.options == null ? error("not ready") : wrap("keys", Keys.list(mc)));
-			case "/api/chat": return onClient(mc, () -> mc.player == null ? error("not in game") : wrap("lines", Chat.recent(mc, 30)));
+			case "/api/chat": return onClient(mc, () -> {
+				if (mc.player == null) return error("not in game");
+				JsonObject o = wrap("lines", Chat.recent(mc, 30));
+				o.add("rich", Chat.rich(mc, 30));
+				return o;
+			});
 			case "/api/pc": {
 				if (!Snapshot.COBBLEMON) return Response.json(error("cobblemon not installed").toString());
 				String since = req.query().getOrDefault("sig", "");
@@ -70,9 +75,19 @@ public final class Api implements dev.cvds.net.MiniHttpServer.Handler {
 				if (!Snapshot.COBBLEMON) return Response.json(error("cobblemon not installed").toString());
 				return onClient(mc, () -> mc.player == null ? error("not in game") : Battle.json(mc));
 			}
+			case "/api/bag": {
+				// Battle bag: works on the integrated server, so it waits here, not on the client thread.
+				if (!Snapshot.COBBLEMON) return Response.json(error("cobblemon not installed").toString());
+				if (mc.player == null) return Response.json(error("not in game").toString());
+				if (req.method().equals("POST"))
+					return Response.json(BattleBag.act(mc, JsonParser.parseString(req.bodyText()).getAsJsonObject()).toString());
+				return Response.json(BattleBag.list(mc).toString());
+			}
 			case "/api/recipes": {
 				String q = req.query().getOrDefault("q", "");
-				return onClient(mc, () -> mc.player == null ? error("not in game") : Crafting.search(mc, q, 60));
+				Set<String> favs = new HashSet<>();
+				for (String f : req.query().getOrDefault("fav", "").split(",")) if (!f.isBlank()) favs.add(f.trim());
+				return onClient(mc, () -> mc.player == null ? error("not in game") : Crafting.search(mc, q, 60, favs));
 			}
 			case "/api/action": {
 				if (!req.method().equals("POST")) return Response.text(405, "text/plain", "POST only");
@@ -93,8 +108,9 @@ public final class Api implements dev.cvds.net.MiniHttpServer.Handler {
 		String kind = a.has("kind") ? a.get("kind").getAsString() : "inv";
 		return switch (kind) {
 			case "inv" -> InvOps.run(mc, a);
-			case "craft" -> Crafting.craft(mc, a.get("id").getAsString(), a.has("max") && a.get("max").getAsBoolean());
-			case "key" -> Keys.press(mc, a.get("id").getAsString()) ? ok() : error("no such key");
+			case "craft" -> Crafting.craft(mc, a.get("id").getAsString(), a.has("max") && a.get("max").getAsBoolean(), a.has("count") ? a.get("count").getAsInt() : 1);
+			case "key" -> (a.has("hold") ? Keys.hold(mc, a.get("id").getAsString(), a.get("hold").getAsBoolean())
+				: Keys.press(mc, a.get("id").getAsString())) ? ok() : error("no such key");
 			case "chat" -> { Chat.send(mc, a.get("text").getAsString()); yield ok(); }
 			case "party" -> {
 				if (!Snapshot.COBBLEMON) yield error("cobblemon not installed");

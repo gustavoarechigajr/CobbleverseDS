@@ -35,7 +35,13 @@ final class Party {
 			for (var t : p.getTypes()) types.add(t.getName());
 			s.add("types", types);
 			var held = p.getHeldItem$common();
-			if (held != null && !held.isEmpty()) s.addProperty("held", held.getHoverName().getString());
+			if (held != null && !held.isEmpty()) {
+				s.addProperty("held", held.getHoverName().getString());
+				s.addProperty("hk", Snapshot.describe(held, items));
+			}
+			// The PC's details (nature, ability, IVs, moves) so a tap on the card can show the summary.
+			JsonObject d = Pc.mon(p, items);
+			for (String f : new String[]{"dex", "gender", "nature", "ability", "ivs", "ivTotal", "moves"}) if (d.has(f)) s.add(f, d.get(f));
 			slots.add(s);
 		}
 		o.add("slots", slots);

@@ -15,7 +15,8 @@ ap.add_argument("--scene", default="chest")
 ap.add_argument("--battle", action="store_true")
 args = ap.parse_args()
 
-jars = glob.glob(os.path.expanduser("~/.gradle/caches/fabric-loom/minecraftMaven/**/minecraft-client*.jar"), recursive=True) + \
+jars = glob.glob(os.path.expanduser("~/.gradle/caches/fabric-loom/*/minecraft-client.jar")) + \
+       glob.glob(os.path.expanduser("~/.gradle/caches/fabric-loom/minecraftMaven/**/minecraft-client*.jar"), recursive=True) + \
        glob.glob(os.path.expanduser("~/Projects/cobbleverse-ds/mod/.gradle/loom-cache/minecraftMaven/**/*.jar"), recursive=True)
 textures = None
 TEX_LOCK = threading.Lock()  # ZipFile isn't safe to read from several threads
@@ -101,8 +102,11 @@ def pc():
             "items": {}, "sortModes": ["NAME", "LEVEL", "TYPE", "POKEDEX_NUMBER", "GENDER"]}
 
 
+MINIMISED = [False]
+
+
 def battle():
-    return {"active": True,
+    return {"active": True, "minimised": MINIMISED[0],
             "mine": [{"name": "Pikachu", "species": "Pikachu", "lvl": 24, "hp": 51, "maxHp": 58, "flat": True, "types": ["Electric"], "stages": {"spa": 1}}],
             "theirs": [{"name": "Gyarados", "species": "Gyarados", "lvl": 20, "hp": 0.64, "maxHp": 1, "flat": False, "types": ["Water", "Flying"], "status": "par", "stages": {"atk": -1}}],
             "request": {"singles": True, "moves": [
@@ -153,6 +157,16 @@ class H(BaseHTTPRequestHandler):
                     return self.send(200, data, "image/png")
             return self.send(404, b"no", "text/plain")
         if p == "/api/pc": return self.send(200, pc())
+        if p == "/api/bag": return self.send(200, {"ok": True, "inBattle": True, "wild": True, "canAct": True, "backpacks": True,
+          "items": [{"k": "cobblemon:max_revive", "name": "Max Revive", "inv": 64, "pack": 0, "inGame": False,
+                     "targets": [{"id": "g", "name": "Gengar", "hp": 0, "maxHp": 104}]},
+                    {"k": "cobblemon:super_potion", "name": "Super Potion", "inv": 2, "pack": 5, "inGame": False,
+                     "targets": [{"id": "a", "name": "Pikachu", "hp": 51, "maxHp": 58}, {"id": "b", "name": "Lucario", "hp": 30, "maxHp": 96}]},
+                    {"k": "cobblemon:full_heal", "name": "Full Heal", "inv": 0, "pack": 3, "inGame": False, "targets": []},
+                    {"k": "cobblemon:ether", "name": "Ether", "inv": 1, "pack": 0, "inGame": True, "targets": []}],
+          "balls": [{"k": "cobblemon:poke_ball", "name": "Poké Ball", "inv": 8, "pack": 24},
+                    {"k": "cobblemon:great_ball", "name": "Great Ball", "inv": 0, "pack": 6},
+                    {"k": "cobblemon:ultra_ball", "name": "Ultra Ball", "inv": 3, "pack": 0}]})
         if p == "/api/battle": return self.send(200, battle() if args.battle else {"active": False})
         if p == "/api/spawns": return self.send(200, SPAWNS)
         if p == "/api/terminal":
@@ -161,7 +175,7 @@ class H(BaseHTTPRequestHandler):
         if p == "/api/keys":
             ks = [("key.inventory", "Open/Close Inventory", "Inventory", "E"), ("key.cobblemon.throwpartypokemon", "Throw Selected Pokémon", "Cobblemon", "R"),
                   ("key.cobblemon.summary", "Open Summary", "Cobblemon", "M"), ("key.cobblemon.pokedex", "Open Pokédex", "Cobblemon", "K"),
-                  ("key.jump", "Jump", "Movement", "Space"), ("key.sneak", "Sneak", "Movement", "Left Shift"), ("xaero.map", "Open World Map", "Xaero's World Map", "M")]
+                  ("key.lumymon.access_pc", "Access Your PC", "LumyMon", "P"), ("key.jump", "Jump", "Movement", "Space"), ("key.sneak", "Sneak", "Movement", "Left Shift"), ("gui.xaero_open_map", "Open World Map", "Xaero's World Map", "M")]
             return self.send(200, {"ok": True, "keys": [{"id": a, "label": b, "cat": c, "bound": d} for a, b, c, d in ks]})
         if p == "/api/recipes":
             rs = [("minecraft:torch", "Torch", 4, True, ["1× Coal", "1× Stick"]), ("minecraft:book", "Book", 1, True, ["3× Paper", "1× Leather"]), ("minecraft:fishing_rod", "Fishing Rod", 1, True, ["3× Stick", "2× String"]), ("minecraft:iron_pickaxe", "Iron Pickaxe", 1, False, ["3× Iron Ingot", "2× Stick"])]
@@ -171,7 +185,12 @@ class H(BaseHTTPRequestHandler):
         self.send(404, {"ok": False, "error": "nope"})
 
     def do_POST(self):
-        self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        body = self.rfile.read(int(self.headers.get("Content-Length", 0)))
+        try:
+            a = json.loads(body or b"{}")
+            if a.get("kind") == "battle" and a.get("op") in ("hide", "show"): MINIMISED[0] = a["op"] == "hide"
+        except Exception:
+            pass
         self.send(200, {"ok": True})
 
 

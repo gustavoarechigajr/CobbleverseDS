@@ -84,7 +84,7 @@ function renderStatus() {
   const s = state.status;
   const weather = s.thunder ? 'Thunder' : s.rain ? 'Rain' : 'Clear';
   setStatus(`${s.biomeName || s.biome || ''}  ${s.x}, ${s.y}, ${s.z}`,
-    `Day ${s.day} ${clock(s.time)}  ${weather}${s.canSleep ? '  Can sleep' : ''}  ♥ ${Math.ceil(s.hp)}  🍗 ${s.food}  Lv ${s.xp}${s.fps != null ? '  ' + s.fps + ' fps' : ''}`, 'ok');
+    `${s.world ? s.world + '  ·  ' : ''}Day ${s.day} ${clock(s.time)}  ${weather}${s.canSleep ? '  Can sleep' : ''}  ♥ ${Math.ceil(s.hp)}  🍗 ${s.food}  Lv ${s.xp}${s.fps != null ? '  ' + s.fps + ' fps' : ''}`, 'ok');
 }
 
 // ---------- tabs ----------
@@ -146,7 +146,7 @@ function renderGrid(force) {
   const wrap = $('#grid-wrap');
   const availW = wrap.clientWidth - 8, availH = wrap.clientHeight - 40;
   let scale = Math.min(availW / bw, availH / bh, 7);
-  scale = Math.max(scale, 56 / 18); // never smaller than a comfortable touch target; scroll instead
+  scale = Math.max(scale, 80 / 18); // never smaller than a ~6 mm touch target on the Thor; scroll instead
   grid.style.width = Math.round(bw * scale) + 'px';
   grid.style.height = Math.round(bh * scale) + 'px';
   // Drag in any direction when the grid fits; a tall modded container keeps vertical scrolling.
@@ -180,6 +180,7 @@ function renderGrid(force) {
     if (img.complete && img.naturalWidth) hide(); else img.addEventListener('load', hide);
   });
   $('#bulk').classList.toggle('hidden', kind !== 'container');
+  $('#more').classList.toggle('hidden', kind !== 'container');
   // A terminal has no container slots: only storing (all / matching the network) applies.
   const term = !!state.screen.terminal;
   $$('#bulk [data-bulk="take"], #bulk [data-bulk="sortc"]').forEach(b => b.classList.toggle('hidden', term));
@@ -200,6 +201,7 @@ function setHtml(sel, html) {
 function esc(s) { return String(s).replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
 
 function setSelected(i) {
+  if (i == null) { pendingAmount = null; const h = $('#sel-hint'); if (h) h.textContent = 'Tap where it goes'; }
   selected = i;
   const bar = $('#selbar');
   if (i == null) { bar.classList.add('hidden'); $('#hotbarbar').classList.add('hidden'); }
@@ -215,11 +217,28 @@ function setSelected(i) {
   $$('.slot').forEach(el => el.classList.toggle('sel', Number(el.dataset.i) === i));
 }
 
-$$('#modes button').forEach(b => b.addEventListener('click', () => {
-  mode = b.dataset.mode;
-  $$('#modes button').forEach(x => x.classList.toggle('on', x === b));
-  setSelected(selected);
-}));
+// One-shot amount for the next tap-to-move ("Move half…" / "Move one…" in the item menu).
+let pendingAmount = null;
+function itemMenu(i) {
+  const s = slotByIndex(i);
+  if (!s || !s.k) return;
+  const menu = state.menu.id, name = itemInfo(s.k).name;
+  const pick = (amount, how) => () => { pendingAmount = amount; setSelected(i); $('#sel-hint').textContent = how; };
+  sheet(`${name}${s.n > 1 ? ' ×' + s.n : ''}`, null, [
+    { label: 'Quick move', sub: 'to the other side', run: () => { setSelected(null); act({ kind: 'inv', op: 'quick', slot: i, menu }); } },
+    { label: 'Move half…', sub: 'then tap where', disabled: s.n < 2, run: pick('half', 'Tap where half goes') },
+    { label: 'Move one…', sub: 'then tap where', run: pick('one', 'Tap where one goes') },
+    { label: 'To hotbar…', sub: 'pick a slot 1–9', run: () => sheet('Put ' + name + ' in hotbar slot', null,
+        [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => ({ label: String(n), run: () => { setSelected(null); act({ kind: 'inv', op: 'hotbar', slot: i, hotbar: n - 1, menu }); } }))) },
+    { label: 'Move all like this', sub: 'every ' + name, run: () => { setSelected(null); act({ kind: 'inv', op: 'quickAll', group: s.g === 'c' ? 'c' : 'pc', key: s.k, menu }); } },
+    { label: 'Drop one', run: () => { setSelected(null); act({ kind: 'inv', op: 'drop', slot: i, all: false, menu }); } },
+    { label: 'Drop stack', run: () => { setSelected(null); act({ kind: 'inv', op: 'drop', slot: i, all: true, menu }); } },
+  ]);
+}
+$('#more').addEventListener('click', () => {
+  const bs = $$('#bulk [data-bulk]').filter(b => !b.classList.contains('hidden'));
+  sheet('Container', null, bs.map(b => ({ label: b.textContent, run: () => b.click() })));
+});
 
 (() => {
   const bar = $('#hotbarbar');
@@ -278,7 +297,7 @@ function gestures(container, itemSel, { canDrag, onTap, onLong, onDrop }) {
       ghost.innerHTML = img ? `<img src="${img.src}" alt="">` : `<span>${esc((down.el.textContent || '').trim().slice(0, 12))}</span>`;
       document.body.appendChild(ghost);
     }
-    ghost.style.transform = `translate(${e.clientX - 44}px, ${e.clientY - 44}px)`;
+    ghost.style.transform = `translate(${e.clientX - 56}px, ${e.clientY - 56}px)`;
     const t = at(e.clientX, e.clientY);
     if (t !== over) { clearOver(); if (t && t !== down.el) { over = t; t.classList.add('drop'); } }
   });
@@ -301,13 +320,9 @@ function gestures(container, itemSel, { canDrag, onTap, onLong, onDrop }) {
 gestures($('#grid'), '.slot', {
   canDrag: el => !!(slotByIndex(Number(el.dataset.i)) || {}).k,
   onTap: el => tapSlot(Number(el.dataset.i)),
-  onLong: el => {
-    const s = slotByIndex(Number(el.dataset.i));
-    if (s && s.k) act({ kind: 'inv', op: 'quick', slot: s.i, menu: state.menu.id });
-    setSelected(null);
-  },
+  onLong: el => { setSelected(null); itemMenu(Number(el.dataset.i)); },
   onDrop: (from, to) => {
-    const amount = mode === 'half' ? 'half' : mode === 'one' ? 'one' : 'all';
+    const amount = pendingAmount || 'all';
     setSelected(null);
     act({ kind: 'inv', op: 'move', from: Number(from.dataset.i), to: Number(to.dataset.i), amount, menu: state.menu.id });
   },
@@ -330,7 +345,7 @@ function tapSlot(i) {
     return;
   }
   if (selected === i) { setSelected(null); return; }
-  const amount = mode === 'half' ? 'half' : mode === 'one' ? 'one' : 'all';
+  const amount = pendingAmount || 'all';
   const from = selected;
   setSelected(null);
   act({ kind: 'inv', op: 'move', from, to: i, amount, menu });
@@ -341,6 +356,7 @@ $('#selbar').addEventListener('click', async e => {
   if (!b || selected == null) return;
   const s = slotByIndex(selected);
   const menu = state.menu.id;
+  if (b.dataset.sel === 'options') { const i = selected; setSelected(null); itemMenu(i); return; }
   switch (b.dataset.sel) {
     case 'all-like': {
       const group = s.g === 'c' ? 'c' : 'pc';
@@ -394,6 +410,16 @@ async function loadNetInner() {
   } catch (e) { $('#net-info').textContent = e.message; }
 }
 function netActive() { return state && state.screen && state.screen.terminal; }
+// Pinned network items sit first (per device).
+let netPins = store.get('netPins', []);
+function netMenu(k) {
+  const name = ((net && net.items && net.items[k]) || {}).name || k, pinned = netPins.includes(k);
+  sheet(name, null, [
+    { label: 'Take a stack', run: () => act({ kind: 'terminal', k }) },
+    { label: 'Take one', run: () => act({ kind: 'terminal', k, one: true }) },
+    { label: pinned ? 'Unpin' : 'Pin to top', run: () => { netPins = pinned ? netPins.filter(x => x !== k) : [...netPins, k]; store.set('netPins', netPins); renderNet(); } },
+  ]);
+}
 function renderNet() {
   const box = $('#net');
   if (!netActive() || !net || !net.open) { box.classList.add('hidden'); return; }
@@ -403,10 +429,11 @@ function renderNet() {
   let list = net.list.filter(e => !q || ((items[e.k] || {}).name || e.k).toLowerCase().includes(q) || e.k.includes(q));
   if ($('#net-sort').value === 'name') list.sort((a, b) => ((items[a.k] || {}).name || '').localeCompare((items[b.k] || {}).name || ''));
   else list.sort((a, b) => b.n - a.n);
+  list.sort((a, b) => netPins.includes(b.k) - netPins.includes(a.k)); // stable: pins first, order kept
   $('#net-info').textContent = `${net.list.length} kinds · ${net.free}/${net.slots} slots free`;
   const html = list.slice(0, 400).map(e => {
     const name = (items[e.k] || {}).name || e.k;
-    return `<div class="ni" data-k="${esc(e.k)}" title="${esc(name)}"><img src="${iconUrl(e.k)}" alt="" onerror="this.remove()" onload="this.nextElementSibling.style.display='none'"><div class="txt">${esc(name)}</div><span class="n">${fmtCount(e.n)}</span></div>`;
+    return `<div class="ni${netPins.includes(e.k) ? ' pin' : ''}" data-k="${esc(e.k)}" title="${esc(name)}"><img src="${iconUrl(e.k)}" alt="" onerror="this.remove()" onload="this.nextElementSibling.style.display='none'"><div class="txt">${esc(name)}</div><span class="n">${fmtCount(e.n)}</span></div>`;
   }).join('');
   const g = $('#net-grid');
   if (g.dataset.html !== html) { g.innerHTML = html || '<div class="note">Nothing matches.</div>'; g.dataset.html = html; }
@@ -418,7 +445,7 @@ function renderNet() {
     const el = e.target.closest('.ni');
     if (!el) return;
     k = el.dataset.k; long = false; sx = e.clientX; sy = e.clientY;
-    timer = setTimeout(() => { long = true; if (navigator.vibrate) navigator.vibrate(30); act({ kind: 'terminal', k, one: true }); }, 450);
+    timer = setTimeout(() => { long = true; if (navigator.vibrate) navigator.vibrate(30); netMenu(k); }, 450);
   });
   const cancel = () => { clearTimeout(timer); timer = null; };
   g.addEventListener('pointermove', e => { if (Math.hypot(e.clientX - sx, e.clientY - sy) > 20) cancel(); });
@@ -437,11 +464,12 @@ setInterval(() => { if (tab === 'storage' && netActive()) loadNet(); else if (!n
 let recipeTimer;
 $('#craft-search').addEventListener('input', () => { clearTimeout(recipeTimer); recipeTimer = setTimeout(loadRecipes, 250); });
 
+let craftFavs = store.get('craftFavs', []);
 async function loadRecipes() {
   const q = $('#craft-search').value;
   let res;
   try {
-    res = await api('/api/recipes?q=' + encodeURIComponent(q));
+    res = await api('/api/recipes?q=' + encodeURIComponent(q) + '&fav=' + encodeURIComponent(craftFavs.join(',')));
   } catch (e) {
     $('#recipes').innerHTML = '';
     $('#craft-note').textContent = e.message;
@@ -455,26 +483,45 @@ async function loadRecipes() {
   const grid = state && state.menu && state.menu.grid;
   $('#craft-note').textContent = (grid ? `${grid[0]}×${grid[1]} grid. ` : '') + (q ? '' : 'Showing what you can make right now.');
   state.items = Object.assign({}, state.items, res.items);
-  $('#recipes').innerHTML = res.recipes.map(r => `
+  const ingChip = g => `<span class="ing ${g.have >= g.need ? 'ok' : 'short'}" title="${esc(((state.items || {})[g.k] || {}).name || '')}"><img src="${iconUrl(g.k)}" alt="" onerror="this.remove()">${g.have}/${g.need}${g.any ? '*' : ''}</span>`;
+  $('#recipes').innerHTML = res.recipes.map(r => {
+    // How many sets the ingredients allow (a hint; the game caps it by what fits the grid).
+    const sets = (r.ingr || []).length ? Math.min(...r.ingr.map(g => Math.floor(g.have / g.need))) : (r.can ? 1 : 0);
+    const fav = craftFavs.includes(r.id);
+    return `
     <div class="card ${r.can ? '' : 'no'}" data-id="${esc(r.id)}">
-      <img src="${iconUrl(r.k)}" alt="" onerror="this.style.visibility='hidden'">
-      <div class="meta"><div class="name">${esc(r.name)}${r.n > 1 ? ' ×' + r.n : ''}</div>
-      <div class="sub">${esc((r.ings || []).join(', ')) || (r.can ? 'Can craft' : 'Missing ingredients')}</div></div>
-      <div class="acts"><button data-c="1" ${r.can ? '' : 'disabled'}>Craft 1</button><button data-c="max" ${r.can ? '' : 'disabled'}>Max</button></div>
-    </div>`).join('') || `<div class="note">${q ? 'No recipe makes "' + esc(q) + '".' : 'Nothing in your inventory can be crafted on this grid. Search for an item to see its recipe.'}</div>`;
+      <div class="top"><img src="${iconUrl(r.k)}" alt="" onerror="this.style.visibility='hidden'">
+        <div class="meta"><div class="name">${esc(r.name)}${r.n > 1 ? ' ×' + r.n : ''}</div>
+        <div class="ings">${(r.ingr || []).map(ingChip).join('') || `<span class="sub">${esc((r.ings || []).join(', '))}</span>`}</div></div>
+        <button class="fav${fav ? ' on' : ''}" data-fav="${esc(r.id)}" title="Favourite">${fav ? '★' : '☆'}</button></div>
+      <div class="acts">${[1, 4, 16].map(n => `<button data-c="${n}" ${r.can && sets >= n ? '' : 'disabled'}>${n === 1 ? 'Craft 1' : '×' + n}</button>`).join('')}<button data-c="max" ${r.can ? '' : 'disabled'}>Max${sets > 1 ? ' (' + sets + ')' : ''}</button></div>
+    </div>`;
+  }).join('') || `<div class="note">${q ? 'No recipe makes "' + esc(q) + '".' : 'Nothing in your inventory can be crafted on this grid. Search for an item to see its recipe.'}</div>`;
 }
 
 $('#recipes').addEventListener('click', async e => {
-  const b = e.target.closest('button');
-  if (!b) return;
+  const f = e.target.closest('[data-fav]');
+  if (f) {
+    const id = f.dataset.fav;
+    craftFavs = craftFavs.includes(id) ? craftFavs.filter(x => x !== id) : [...craftFavs, id];
+    store.set('craftFavs', craftFavs);
+    loadRecipes();
+    return;
+  }
+  const b = e.target.closest('button[data-c]');
+  if (!b || b.disabled) return;
   const id = b.closest('.card').dataset.id;
-  await act({ kind: 'craft', id, max: b.dataset.c === 'max' });
+  const c = b.dataset.c;
+  await act(c === 'max' ? { kind: 'craft', id, max: true } : { kind: 'craft', id, count: Number(c) });
   setTimeout(loadRecipes, 300);
 });
 
 // ---------- keybinds ----------
 let keys = [];
-const DEFAULT_FAVS = ['key.inventory', 'key.cobblemon.throwpartypokemon', 'key.cobblemon.summary', 'key.cobblemon.pokedex', 'key.cobblemon.pokenavigator', 'key.togglePerspective', 'key.playerlist'];
+// Pack keys that open something are favourites by default (only the ones the installed mods register).
+const DEFAULT_FAVS = ['key.inventory', 'key.cobblemon.throwpartypokemon', 'key.cobblemon.summary', 'key.cobblemon.pokedex',
+  'key.cobblemon.pokenavigator', 'key.lumymon.access_pc', 'keybind.sophisticatedbackpacks.open_backpack',
+  'key.toms_storage.open_terminal', 'gui.xaero_open_map', 'key.togglePerspective', 'key.playerlist'];
 let favs = store.get('favs', null);
 
 async function loadKeys(force) {
@@ -482,13 +529,46 @@ async function loadKeys(force) {
   try {
     keys = (await api('/api/keys')).keys;
   } catch (e) { toast(e.message); return; }
-  if (favs == null) favs = DEFAULT_FAVS.filter(id => keys.some(k => k.id === id));
+  const has = id => keys.some(k => k.id === id);
+  if (favs == null) favs = DEFAULT_FAVS.filter(has);
+  else {
+    // Defaults added in a later version join existing favourites once; un-starring one keeps it off.
+    const offered = store.get('favsOffered', ['key.inventory', 'key.cobblemon.throwpartypokemon', 'key.cobblemon.summary',
+      'key.cobblemon.pokedex', 'key.cobblemon.pokenavigator', 'key.togglePerspective', 'key.playerlist']);
+    const fresh = DEFAULT_FAVS.filter(id => !offered.includes(id) && has(id) && !favs.includes(id));
+    if (fresh.length) favs = [...favs, ...fresh];
+  }
+  store.set('favs', favs);
+  store.set('favsOffered', DEFAULT_FAVS);
   renderKeys();
 }
 
+// Keys that do something only while held: the panel toggles them (tap = hold down, tap again = let go).
+const HOLD_KEYS = new Set(['key.sneak', 'key.sprint', 'key.use', 'key.attack', 'key.forward', 'key.back', 'key.left', 'key.right', 'key.jump',
+  'key.playerlist', 'zoomify.key.zoom', 'key.pingwheel.ping_location', 'key.cobblemon.ridingfreelook', 'key.cobblemonraiddens.mouse', 'key.catchrate.show_comparison']);
+let hiddenCats = store.get('hiddenCats', []), hideUnbound = store.get('hideUnbound', false);
 function keyButton(k) {
-  const on = favs.includes(k.id);
-  return `<div class="key"><button class="press" data-kb="${esc(k.id)}">${esc(k.label)}<small>${esc(k.bound || 'unbound')}</small></button><button class="star" data-star="${esc(k.id)}">${on ? '★' : '☆'}</button></div>`;
+  const on = favs.includes(k.id), hold = HOLD_KEYS.has(k.id);
+  return `<div class="key${k.held ? ' held' : ''}" data-key="${esc(k.id)}"><button class="press" data-kb="${esc(k.id)}" ${hold ? 'data-hold="1"' : ''}>${esc(k.label)}<small>${esc(k.bound || 'unbound')}${hold ? (k.held ? ' · HELD — tap to let go' : ' · tap to hold') : ''}</small></button><button class="star" data-star="${esc(k.id)}">${on ? '★' : '☆'}</button></div>`;
+}
+function keyFavMenu(id) {
+  const i = favs.indexOf(id), k = keys.find(x => x.id === id);
+  if (i < 0 || !k) return;
+  const moveTo = j => () => { const f = favs.filter(x => x !== id); f.splice(j, 0, id); favs = f; store.set('favs', favs); renderKeys(); };
+  sheet(k.label, 'Reorder this favourite.', [
+    { label: 'Move to start', disabled: i === 0, run: moveTo(0) },
+    { label: '◀ Earlier', disabled: i === 0, run: moveTo(i - 1) },
+    { label: 'Later ▶', disabled: i === favs.length - 1, run: moveTo(i + 1) },
+    { label: 'Move to end', disabled: i === favs.length - 1, run: moveTo(favs.length - 1) },
+    { label: 'Remove from favourites', run: () => { favs = favs.filter(x => x !== id); store.set('favs', favs); renderKeys(); } },
+  ]);
+}
+function keySections() {
+  const cats = [...new Set(keys.map(k => k.cat))];
+  const toggle = c => () => { hiddenCats = hiddenCats.includes(c) ? hiddenCats.filter(x => x !== c) : [...hiddenCats, c]; store.set('hiddenCats', hiddenCats); renderKeys(); keySections(); };
+  sheet('Keybind sections', 'Hide the sections you never use. Favourites always show.', [
+    { label: hideUnbound ? 'Show unbound keys' : 'Hide unbound keys', run: () => { hideUnbound = !hideUnbound; store.set('hideUnbound', hideUnbound); renderKeys(); keySections(); } },
+    ...cats.map(c => ({ label: c, sub: hiddenCats.includes(c) ? 'Hidden · tap to show' : 'Shown · tap to hide', cls: hiddenCats.includes(c) ? '' : 'on', run: toggle(c) }))]);
 }
 
 function renderKeys() {
@@ -497,6 +577,7 @@ function renderKeys() {
   const cats = new Map();
   for (const k of keys) {
     if (q && !(k.label + ' ' + k.cat + ' ' + k.id).toLowerCase().includes(q)) continue;
+    if (!q && (hiddenCats.includes(k.cat) || (hideUnbound && !k.bound))) continue;
     if (!cats.has(k.cat)) cats.set(k.cat, []);
     cats.get(k.cat).push(k);
   }
@@ -504,8 +585,26 @@ function renderKeys() {
     `<details ${q ? 'open' : ''}><summary>${esc(cat)} (${ks.length})</summary><div class="keys">${ks.map(keyButton).join('')}</div></details>`).join('');
 }
 
-document.addEventListener('click', e => {
+// Long-press a favourite to reorder it (the click that follows is swallowed).
+let keyLongTimer = null, keyLongFired = false;
+$('#key-favs').addEventListener('pointerdown', e => {
+  const el = e.target.closest('.key');
+  keyLongFired = false;
+  if (!el) return;
+  keyLongTimer = setTimeout(() => { keyLongFired = true; if (navigator.vibrate) navigator.vibrate(30); keyFavMenu(el.dataset.key); }, 500);
+});
+['pointerup', 'pointercancel', 'pointerleave'].forEach(t => $('#key-favs').addEventListener(t, () => clearTimeout(keyLongTimer)));
+$('#key-sections').addEventListener('click', keySections);
+document.addEventListener('click', async e => {
   const p = e.target.closest('[data-kb]');
+  if (p && keyLongFired && p.closest('#key-favs')) { keyLongFired = false; return; }
+  if (p && p.dataset.hold) {
+    const k = keys.find(x => x.id === p.dataset.kb);
+    await act({ kind: 'key', id: p.dataset.kb, hold: !(k && k.held) });
+    if (k) k.held = !k.held;
+    renderKeys();
+    return;
+  }
   if (p) { act({ kind: 'key', id: p.dataset.kb }); return; }
   const s = e.target.closest('[data-star]');
   if (s) {
@@ -530,35 +629,44 @@ function renderParty() {
     if (!m.name) return `<div class="mon empty" data-p="${i}">Empty</div>`;
     const frac = m.maxHp ? m.hp / m.maxHp : 0;
     const hue = Math.round(frac * 120);
-    return `<div class="mon ${p.sel === i ? 'sel' : ''}${partyMoveFrom === i ? ' moving' : ''}" data-p="${i}">
-      <button class="re" data-re="${i}" title="Reorder">⇅</button>${m.k ? `<img src="${iconUrl(m.k)}" alt="" onerror="this.remove()">` : ''}
-      <div class="nm">${esc(m.name)}${m.shiny ? ' ✨' : ''}</div>
-      <div class="sub">Lv ${m.lvl} · ${m.hp}/${m.maxHp} HP${m.fainted ? ' · Fainted' : ''}${m.status ? ' · ' + esc(m.status.toUpperCase()) : ''}</div>
+    // The sprite is the centrepiece; name + reorder key on top, stats underneath.
+    return `<div class="mon ${p.sel === i ? 'sel' : ''}${partyMoveFrom === i ? ' moving' : ''}${m.fainted ? ' fainted' : ''}" data-p="${i}">
+      <div class="top"><div class="nm">${esc(m.name)}${m.shiny ? ' ✨' : ''}</div></div>
+      <div class="art">${m.k ? `<img src="${iconUrl(m.k)}" alt="" onerror="this.remove()">` : ''}</div>
+      <div class="sub"><b>Lv ${m.lvl}</b> · ${m.hp}/${m.maxHp} HP${m.fainted ? ' · Fainted' : ''}${m.status ? ' · ' + esc(m.status.toUpperCase()) : ''}</div>
       <div class="hp"><i style="width:${Math.round(frac * 100)}%;background:hsl(${hue},75%,45%)"></i></div>
-      <div>${typePills(m.types)}</div>
-      ${m.held ? `<div class="sub">Holding ${esc(m.held)}</div>` : ''}
+      <div class="pills">${typePills(m.types)}${m.held ? `<span class="held">${m.hk ? `<img src="${iconUrl(m.hk)}" alt="" onerror="this.remove()">` : '◆ '}${esc(m.held)}</span>` : ''}</div>
+      <button class="send" data-send="${i}">Send out <small>or recall</small></button>
     </div>`;
   }).join('');
 }
-let partyMoveFrom = null;
-$('#party').addEventListener('click', async e => {
-  const re = e.target.closest('[data-re]');
-  if (re) { partyMoveFrom = partyMoveFrom === Number(re.dataset.re) ? null : Number(re.dataset.re); lastPartySig = ''; renderParty(); return; }
-  const m = e.target.closest('[data-p]');
-  if (!m) return;
-  const slot = Number(m.dataset.p);
-  if (partyMoveFrom != null) {
-    const from = partyMoveFrom;
-    partyMoveFrom = null;
-    lastPartySig = '';
-    if (from !== slot) await act({ kind: 'pc', op: 'move', from: { type: 'party', slot: from }, to: { type: 'party', slot } });
-    renderParty();
-    return;
-  }
-  act({ kind: 'party', slot });
+let partyMoveFrom = null; // kept for the render signature; reordering is drag (or Move in the summary)
+async function partyMove(from, to) {
+  if (from === to) return;
+  await act({ kind: 'pc', op: 'move', from: { type: 'party', slot: from }, to: { type: 'party', slot: to } });
+  lastPartySig = '';
+}
+function partySummary(slot) {
+  const m = ((state && state.party && state.party.slots) || [])[slot];
+  if (!m || !m.name) return;
+  act({ kind: 'party', slot }); // also makes it the selected party slot, like tapping it in game
+  const moves = [0, 1, 2, 3, 4, 5].filter(i => i !== slot).map(i => {
+    const o = state.party.slots[i];
+    return { label: `Slot ${i + 1}`, sub: o && o.name ? 'Swap with ' + o.name : 'Empty', run: () => partyMove(slot, i) };
+  });
+  sheet(m.name + (m.shiny ? ' ★' : '') + genderMark(m), monDetailHtml(m) + '<h3>Move to</h3>', moves);
+}
+// The Send out key is its own target: keep the card's tap/drag gestures off it.
+$('#party').addEventListener('pointerdown', e => { if (e.target.closest('[data-send]')) e.stopPropagation(); }, true);
+$('#party').addEventListener('click', e => {
+  const b = e.target.closest('[data-send]');
+  if (b) act({ kind: 'party', slot: Number(b.dataset.send), send: true });
 });
-$('#party-send').addEventListener('click', () => {
-  if (state && state.party) act({ kind: 'party', slot: state.party.sel, send: true });
+gestures($('#party'), '.mon', {
+  canDrag: el => !el.classList.contains('empty'),
+  onTap: el => { if (!el.classList.contains('empty')) partySummary(Number(el.dataset.p)); },
+  onLong: el => { if (!el.classList.contains('empty')) partySummary(Number(el.dataset.p)); },
+  onDrop: (from, to) => partyMove(Number(from.dataset.p), Number(to.dataset.p)),
 });
 
 
@@ -637,28 +745,67 @@ function renderPc() {
     res.classList.remove('hidden');
   } else res.classList.add('hidden');
   renderPcDetail();
+  pcMultiRender();
 }
 
+// What the details panel shows when nothing is selected: this box at a glance.
+function pcSummaryHtml() {
+  const box = pc && pc.boxes && pc.boxes[pcBox];
+  const mons = box ? box.slots.filter(m => m.id) : [];
+  if (!mons.length) return '<h2>Empty box</h2><div>Tap a Pokémon to see details. Tap one, then another slot to move or swap them. Use “Select several” to move a group.</div>';
+  const lv = mons.map(m => m.lvl), shinies = mons.filter(m => m.shiny).length;
+  const types = {};
+  mons.forEach(m => (m.types || []).forEach(t => { types[t] = (types[t] || 0) + 1; }));
+  const top = Object.entries(types).sort((a, b) => b[1] - a[1]).slice(0, 6);
+  const perfect = mons.filter(m => m.ivTotal >= 150).length;
+  return `<h2>${esc(box.name || 'Box ' + (pcBox + 1))}</h2>
+    <div><b>${mons.length}</b>/30 Pokémon · Lv ${Math.min(...lv)}–${Math.max(...lv)}${shinies ? ` · <b>${shinies}</b> shiny` : ''}${perfect ? ` · <b>${perfect}</b> with 150+ IVs` : ''}</div>
+    <h3>Types</h3><div>${top.map(([t, n]) => typePills([t]).replace('</span>', ` ×${n}</span>`)).join('')}</div>
+    <h3>Tips</h3><div>Tap one for details · tap another slot to move or swap · “Select several” moves a group.</div>`;
+}
+// Multi-select: tap several, then move them all to another box.
+let pcMulti = null; // Set of "box:slot" while selecting several
+function pcMultiRender() {
+  const on = pcMulti != null;
+  $('#pc-multi').textContent = on ? 'Done' : 'Select several';
+  $('#pc-multi').classList.toggle('on', on);
+  $('#pc-multi-move').classList.toggle('hidden', !on);
+  $('#pc-multi-move').textContent = on ? `Move ${pcMulti.size} to box…` : '';
+  $('#pc-multi-move').disabled = !on || !pcMulti.size;
+  $$('#pc-grid .pk').forEach(el => el.classList.toggle('multi', on && pcMulti.has(el.dataset.box + ':' + el.dataset.slot)));
+}
+async function pcMoveGroup(to) {
+  const picks = [...pcMulti].map(s => s.split(':').map(Number)).filter(([b]) => b !== to);
+  const free = pc.boxes[to].slots.map((m, i) => m.id ? -1 : i).filter(i => i >= 0);
+  if (picks.length > free.length) return toast(`Only ${free.length} free slots in that box`);
+  pcMulti = null; pcMultiRender();
+  for (let i = 0; i < picks.length; i++) await act({ kind: 'pc', op: 'move', from: { type: 'pc', box: picks[i][0], slot: picks[i][1] }, to: { type: 'pc', box: to, slot: free[i] } });
+  toast(`Moved ${picks.length} to ${pc.boxes[to].name || 'Box ' + (to + 1)}`, true);
+  pcSig = ''; setTimeout(loadPc, 300);
+}
+function genderMark(m) { return m.gender === 'MALE' ? ' ♂' : m.gender === 'FEMALE' ? ' ♀' : ''; }
+// Summary shared by the PC details panel and the Party card sheet.
+function monDetailHtml(m) {
+  const ivs = Object.entries(m.ivs || {}).map(([k, v]) =>
+    `<div class="iv"><span>${STAT_LABEL[k] || k}</span><div class="bar2"><i class="${v === 31 ? 'max' : ''}" style="width:${Math.round(v / 31 * 100)}%"></i></div><b>${v}</b></div>`).join('');
+  return `<div>${esc(m.species)}${m.dex ? ' #' + m.dex : ''} · Lv ${m.lvl} · ${m.hp}/${m.maxHp} HP</div>
+    <div style="margin:6px 0">${typePills(m.types)}</div>
+    ${m.nature ? `<div>Nature: <b>${esc(m.nature)}</b> · Ability: <b>${esc(m.ability)}</b></div>` : ''}
+    ${m.held ? `<div>Holding ${esc(m.held)}</div>` : ''}
+    ${m.ivs ? `<h3>IVs (${m.ivTotal}/186)</h3>${ivs}` : ''}
+    ${m.moves ? `<h3>Moves</h3><div>${m.moves.map(esc).join(' · ') || '—'}</div>` : ''}`;
+}
 function renderPcDetail() {
   const m = monAt(pcSel);
   const d = $('#pc-detail');
   const rel = $('#pc-release');
   if (!m) {
     if (pcSel) pcSel = null;
-    d.innerHTML = 'Tap a Pokémon to see details. Tap one, then tap another slot to move or swap them.';
+    d.innerHTML = pcSummaryHtml();
     rel.classList.add('hidden');
     return;
   }
-  const g = m.gender === 'MALE' ? ' ♂' : m.gender === 'FEMALE' ? ' ♀' : '';
-  const ivs = Object.entries(m.ivs || {}).map(([k, v]) =>
-    `<div class="iv"><span>${STAT_LABEL[k] || k}</span><div class="bar2"><i class="${v === 31 ? 'max' : ''}" style="width:${Math.round(v / 31 * 100)}%"></i></div><b>${v}</b></div>`).join('');
-  d.innerHTML = `<h2>${esc(m.name)}${m.shiny ? ' ★' : ''}${g}</h2>
-    <div>${esc(m.species)} #${m.dex} · Lv ${m.lvl} · ${m.hp}/${m.maxHp} HP</div>
-    <div style="margin:6px 0">${typePills(m.types)}</div>
-    <div>Nature: <b>${esc(m.nature)}</b> · Ability: <b>${esc(m.ability)}</b></div>
-    ${m.held ? `<div>Holding ${esc(m.held)}</div>` : ''}
-    <h3>IVs (${m.ivTotal}/186)</h3>${ivs}
-    <h3>Moves</h3><div>${(m.moves || []).map(esc).join(' · ') || '—'}</div>`;
+  d.innerHTML = `<h2>${esc(m.name)}${m.shiny ? ' ★' : ''}${genderMark(m)}</h2>` + monDetailHtml(m);
   rel.classList.toggle('hidden', !pc.open && pcSel.type === 'pc');
   if (rel.dataset.for !== m.id) { rel.classList.remove('armed'); rel.textContent = 'Release'; rel.dataset.for = m.id; }
 }
@@ -688,9 +835,29 @@ function pcRef(el) {
   return ref;
 }
 gestures($('#pc-main'), '.pk', {
-  canDrag: el => !!monAt(pcRef(el)),
-  onTap: el => pcTap(el),
+  canDrag: el => pcMulti == null && !!monAt(pcRef(el)),
+  onTap: el => {
+    if (pcMulti != null) {
+      if (el.dataset.type !== 'pc' || !monAt(pcRef(el))) return;
+      const k = el.dataset.box + ':' + el.dataset.slot;
+      if (pcMulti.has(k)) pcMulti.delete(k); else pcMulti.add(k);
+      pcMultiRender();
+      return;
+    }
+    pcTap(el);
+  },
   onDrop: (from, to) => { pcSel = null; pcAct({ op: 'move', from: pcRef(from), to: pcRef(to) }); },
+});
+$('#pc-multi').addEventListener('click', () => {
+  if (pc && !pc.open && pcMulti == null) return toast('Open a PC in game to move Pokémon');
+  pcMulti = pcMulti == null ? new Set() : null; pcSel = null; renderPc(); pcMultiRender();
+});
+$('#pc-multi-move').addEventListener('click', () => {
+  if (!pcMulti || !pcMulti.size) return;
+  sheet(`Move ${pcMulti.size} Pokémon to`, null, pc.boxes.map((b, i) => {
+    const free = b.slots.filter(m => !m.id).length;
+    return { label: b.name || 'Box ' + (i + 1), sub: `${free} free`, disabled: free === 0 || i === pcBox && false, run: () => pcMoveGroup(i) };
+  }));
 });
 $('#pc-prev').addEventListener('click', () => { if (pc && pc.boxes) { pcBox = (pcBox - 1 + pc.boxes.length) % pc.boxes.length; store.set('pcBox', pcBox); renderPc(); } });
 $('#pc-next').addEventListener('click', () => { if (pc && pc.boxes) { pcBox = (pcBox + 1) % pc.boxes.length; store.set('pcBox', pcBox); renderPc(); } });
@@ -780,60 +947,187 @@ function hpBar(m) {
   return `<div class="sub">${txt}</div><div class="hp"><i style="width:${Math.round(frac * 100)}%;background:hsl(${hue},75%,45%)"></i></div>`;
 }
 const LIGHT_TYPES = new Set(['electric', 'ice', 'normal', 'fairy', 'ground', 'steel', 'flying', 'rock', 'bug']);
+// Darken a #rrggbb colour (the Thor's WebView is Chrome 109: no CSS color-mix()).
+function darken(hex, f) {
+  const n = parseInt(hex.slice(1), 16);
+  return '#' + [16, 8, 0].map(b => Math.round(((n >> b) & 255) * f).toString(16).padStart(2, '0')).join('');
+}
 function typeInk(t) { return LIGHT_TYPES.has((t || '').toLowerCase()) ? 'color:#141414;text-shadow:none' : ''; }
 function typePills(types) { return (types || []).map(t => `<span class="pill" style="background:${TYPE_COLOR[t.toLowerCase()] || '#555'};${typeInk(t)}">${esc(t)}</span>`).join(''); }
 function monCard(m, foe) {
   const st = Object.entries(m.stages || {}).map(([k, v]) => `<span class="stage ${v > 0 ? 'up' : 'down'}">${esc(k.toUpperCase())} ${v > 0 ? '+' : ''}${v}</span>`).join('');
-  return `<div class="bm ${foe ? 'foe' : ''}"><div class="nm">${esc(m.name)}${m.shiny ? ' ★' : ''} <span class="sub">Lv ${m.lvl}${m.status ? ' · ' + esc(m.status.toUpperCase()) : ''}</span></div>
-    ${hpBar(m)}<div style="margin-top:6px">${typePills(m.types)}</div><div>${st}</div></div>`;
+  return `<div class="bm ${foe ? 'foe' : ''}">${m.k ? `<img class="spr" src="${iconUrl(m.k)}" alt="" onerror="this.remove()">` : ''}<div class="info"><div class="nm">${esc(m.name)}${m.shiny ? ' ★' : ''} <span class="sub">Lv ${m.lvl}${m.status ? ' · ' + esc(m.status.toUpperCase()) : ''}</span></div>
+    ${hpBar(m)}<div style="margin-top:6px">${typePills(m.types)}</div><div>${st}</div></div></div>`;
 }
 function renderBattle() {
   const b = battle;
   if (!b || !b.active) {
-    $('#b-sides').innerHTML = '';
-    $('#b-moves').innerHTML = '';
-    $('#b-bench').innerHTML = '';
+    setHtml('#b-sides', ''); // via setHtml, so the next identical render isn't skipped
+    setHtml('#b-moves', ''); // via setHtml, so the next identical render isn't skipped
+    setHtml('#b-bench', ''); // via setHtml, so the next identical render isn't skipped
     $('#b-switch-h').classList.add('hidden');
+    $('#b-view').classList.add('hidden');
+    $('#b-views').classList.add('hidden');
+    $('#b-bag').classList.add('hidden');
     $('#b-note').textContent = 'Not in a battle. This tab opens by itself when one starts.';
     return;
   }
+  // Same as Cobblemon's "Press R to move around": hide the battle screen to walk, aim or throw a ball.
+  const view = $('#b-view');
+  view.classList.toggle('hidden', !!b.spectating);
+  view.classList.toggle('on', !!b.minimised);
+  view.textContent = b.minimised ? 'Back to battle' : 'Move around';
+  $('#b-views').classList.toggle('hidden', !!b.spectating);
+  renderBag();
   const foe = (b.theirs || [])[0];
   setHtml('#b-sides', (b.theirs || []).map(m => monCard(m, true)).join('') + (b.mine || []).map(m => monCard(m, false)).join(''));
   const r = b.request;
   const myTypes = ((b.mine || [])[0] || {}).types || [];
   if (!r) {
     $('#b-note').textContent = b.spectating ? 'Spectating.' : 'Waiting for the turn…';
-    $('#b-moves').innerHTML = '';
-    $('#b-bench').innerHTML = '';
+    lastTurnSig = '';
+    setHtml('#b-moves', ''); // via setHtml, so the next identical render isn't skipped
+    setHtml('#b-bench', ''); // via setHtml, so the next identical render isn't skipped
     $('#b-switch-h').classList.add('hidden');
     return;
   }
-  $('#b-note').textContent = r.forceSwitch ? 'Choose a Pokémon to send in.' : r.singles ? 'Tap a move.' : 'Double battle: info only. Pick moves and targets on the game screen.';
+  $('#b-note').textContent = (b.minimised ? 'Battle screen hidden: you can move. ' : '') +
+    (r.forceSwitch ? 'Choose a Pokémon to send in.' : r.singles ? 'Tap a move · hold for details.' : 'Double battle: tap a move, then its target · hold for details.');
   setHtml('#b-moves', r.forceSwitch ? '' : (r.moves || []).map(m => {
     const [label, cls] = foe ? effLabel(m.cat === 'status' ? null : effectiveness(m.type, foe.types)) : ['', ''];
     const stab = myTypes.some(t => t.toLowerCase() === (m.type || '').toLowerCase()) && m.cat !== 'status';
     const col = TYPE_COLOR[(m.type || '').toLowerCase()] || '#555';
     const pow = m.power > 0 ? `Power ${Math.round(m.power)}` : '';
     const acc = m.acc > 0 ? `Acc ${Math.round(m.acc)}%` : '';
-    return `<button class="mv" data-move="${esc(m.id)}" style="background:linear-gradient(180deg, ${col}, color-mix(in srgb, ${col} 75%, #000));${typeInk(m.type)}" ${m.disabled || m.pp <= 0 || !r.singles ? 'disabled' : ''}>
+    return `<button class="mv" data-move="${esc(m.id)}" style="background:linear-gradient(180deg, ${col}, ${darken(col, .75)});${typeInk(m.type)}" ${m.disabled || m.pp <= 0 ? 'aria-disabled="true"' : ''}>
       <span class="t">${esc(m.name)}</span>
       <span class="row"><span>${esc(m.type || '')} · ${esc(m.cat || '')}${stab ? ' · STAB' : ''}</span><span>PP ${m.pp}/${m.maxPp}</span></span>
       <span class="row"><span>${pow} ${acc}</span></span>
-      <span class="eff ${cls}">${label}</span></button>`;
+      <span class="eff ${cls}">${m.pp <= 0 ? 'No PP left' : m.disabled ? 'Disabled this turn' : label}</span></button>`;
   }).join(''));
   $('#b-switch-h').classList.remove('hidden');
-  setHtml('#b-bench', (r.bench || []).map(p => `<button data-sw="${p.id}" ${p.active || p.hp <= 0 || r.trapped ? 'disabled' : ''}>${esc(p.name)} Lv${p.lvl} · ${p.hp}/${p.maxHp}${p.active ? ' (in battle)' : ''}</button>`).join(''));
+  const why = p => p.active ? 'In battle' : p.hp <= 0 ? 'Fainted' : r.trapped ? 'Trapped' : '';
+  setHtml('#b-bench', (r.bench || []).map(p => `<button data-sw="${p.id}" ${why(p) ? 'disabled' : ''}>${esc(p.name)} Lv${p.lvl}<small>${why(p) || `${p.hp}/${p.maxHp} HP`}</small></button>`).join(''));
+  // A new turn starts on the moves again (after using the Bag, say).
+  // A new turn = the request comes back after a "waiting" stretch (an item use doesn't change PP).
+  if (!lastTurnSig) { lastTurnSig = 'turn'; if (bagView !== 'moves') { bagView = 'moves'; bagSel = null; } }
 }
-$('#b-moves').addEventListener('click', async e => {
-  const b = e.target.closest('[data-move]');
-  if (!b || b.disabled) return;
-  await act({ kind: 'battle', op: 'move', id: b.dataset.move });
+let lastTurnSig = '';
+const moveById = id => ((battle && battle.request && battle.request.moves) || []).find(m => m.id === id);
+async function chooseMove(id, target) {
+  await act(Object.assign({ kind: 'battle', op: 'move', id }, target ? { target } : {}));
   loadBattle();
+}
+function moveInfo(m) {
+  const bits = [m.type, m.cat, m.power > 0 ? `Power ${Math.round(m.power)}` : '', m.acc > 0 ? `Accuracy ${Math.round(m.acc)}%` : '', `PP ${m.pp}/${m.maxPp}`].filter(Boolean).join(' · ');
+  sheet(m.name, `<b>${esc(bits)}</b><br>${esc(m.desc || 'No description.')}`);
+}
+gestures($('#b-moves'), '.mv', {
+  canDrag: () => false,
+  onLong: el => { const m = moveById(el.dataset.move); if (m) moveInfo(m); },
+  onTap: el => {
+    const m = moveById(el.dataset.move);
+    if (!m) return;
+    if (m.pp <= 0 || m.disabled) { toast(m.pp <= 0 ? 'No PP left for ' + m.name : m.name + ' is disabled this turn'); return; }
+    const ts = m.targets || [];
+    // Double battles: pick the target when there's a real choice.
+    if (!battle.request.singles && ts.length > 1)
+      sheet(m.name, 'Choose a target.', ts.map(t => ({ label: t.name || t.pnx, sub: t.ally ? 'Your side' : 'Opponent', run: () => chooseMove(m.id, t.pnx) })));
+    else chooseMove(m.id);
+  },
+  onDrop: () => {},
 });
 $('#b-bench').addEventListener('click', async e => {
   const b = e.target.closest('[data-sw]');
   if (!b || b.disabled) return;
   await act({ kind: 'battle', op: 'switch', id: b.dataset.sw });
+  loadBattle();
+});
+// ---------- bottom sheet: a big-button menu or info card over the panel ----------
+// opts: [{ label, sub, cls, run }]; tapping outside or Close dismisses it.
+function sheet(title, body, opts = []) {
+  const el = $('#sheet'), p = el.querySelector('.panel');
+  p.innerHTML = `<h2>${esc(title)}</h2>${body ? `<div class="body">${body}</div>` : ''}` +
+    (opts.length ? `<div class="opts">${opts.map((o, i) => `<button data-opt="${i}" class="${o.cls || ''}" ${o.disabled ? 'disabled' : ''}>${esc(o.label)}${o.sub ? `<small>${esc(o.sub)}</small>` : ''}</button>`).join('')}</div>` : '') +
+    `<button class="close">Close</button>`;
+  el.classList.remove('hidden');
+  el.onclick = e => {
+    const b = e.target.closest('[data-opt]');
+    if (b && !b.disabled) { closeSheet(); opts[Number(b.dataset.opt)].run(); return; }
+    if (e.target === el || e.target.closest('.close')) closeSheet();
+  };
+}
+function closeSheet() { $('#sheet').classList.add('hidden'); }
+
+// ---------- battle bag: items and Poké Balls (inventory + backpacks) ----------
+let bagView = 'moves', bag = null, bagSel = null, bagBusy = false, bagLoadedAt = 0;
+async function loadBag() {
+  try { bag = await api('/api/bag'); bagLoadedAt = Date.now(); } catch (e) { bag = { error: e.message }; }
+  renderBag();
+}
+function bagCount(e) {
+  return `<b>×${e.inv + e.pack}</b>${e.pack ? `<span class="pack">${e.inv ? e.pack + ' in backpack' : 'backpack'}</span>` : ''}`;
+}
+function renderBag() {
+  document.querySelectorAll('#b-views [data-bv]').forEach(b => b.classList.toggle('on', b.dataset.bv === bagView));
+  const showMoves = bagView === 'moves';
+  $('#b-moves').classList.toggle('hidden', !showMoves);
+  $('#b-bag').classList.toggle('hidden', showMoves);
+  if (showMoves) return;
+  const el = $('#b-bag');
+  if (!bag) { el.innerHTML = '<div class="note">Opening the bag…</div>'; return; }
+  if (bag.error) { el.innerHTML = `<div class="note">${esc(bag.error)}</div>`; return; }
+  const icon = k => `<img src="${iconUrl(k)}" alt="" onerror="this.remove()">`;
+  if (bagView === 'bag') {
+    const list = bag.items || [];
+    if (!list.length) { el.innerHTML = `<div class="note">No battle items in your inventory${bag.backpacks ? ' or backpacks' : ''}.</div>`; return; }
+    el.innerHTML = list.map(e => {
+      const sel = bagSel === e.k, usable = !e.inGame && e.targets.length > 0;
+      let more = '';
+      if (sel && usable) more = `<div class="tg">${e.targets.map(t => `<button data-use="${esc(e.k)}" data-t="${esc(t.id)}" data-n="${esc(t.name)}">${esc(t.name)}<small>${t.hp}/${t.maxHp} HP</small></button>`).join('')}</div>`;
+      else if (sel) more = `<div class="why">${e.inGame ? 'Needs a move picked: use it on the game screen.' : bag.canAct ? 'Nothing to use it on right now.' : 'Wait for your turn.'}</div>`;
+      // A div, not a button: the target buttons go inside it (buttons can't nest).
+      return `<div class="bi tap${sel ? ' sel' : ''}${usable ? '' : ' off'}" role="button" tabindex="0">
+        <div class="row1" data-bi="${esc(e.k)}">${icon(e.k)}<div><div class="nm">${esc(e.name)}</div><div class="ct">${bagCount(e)}${usable && !sel ? ' · tap to use' : sel ? ' · tap again to close' : ''}</div></div></div>${more}</div>`;
+    }).join('');
+  } else {
+    const list = bag.balls || [];
+    if (!list.length) { el.innerHTML = `<div class="note">No Poké Balls in your inventory${bag.backpacks ? ' or backpacks' : ''}.</div>`; return; }
+    el.innerHTML = (bag.wild ? '' : '<div class="note">Balls can only be thrown at wild Pokémon. You can still put one in your hand.</div>') + list.map(e => `
+      <div class="bi"><div class="row1">${icon(e.k)}<div><div class="nm">${esc(e.name)}</div><div class="ct">${bagCount(e)}</div></div></div>
+        <div class="acts"><button class="throw" data-throw="${esc(e.k)}" ${bag.wild ? '' : 'disabled'}>Throw</button><button data-equip="${esc(e.k)}">Equip</button></div></div>`).join('');
+  }
+}
+async function bagAct(body, done) {
+  if (bagBusy) return;
+  bagBusy = true;
+  try { await api('/api/bag', body); toast(done, true); bagSel = null; }
+  catch (e) { toast(e.message); }
+  finally { bagBusy = false; }
+  await loadBag();
+  loadBattle();
+}
+$('#b-views').addEventListener('click', e => {
+  const b = e.target.closest('[data-bv]');
+  if (!b) return;
+  bagView = b.dataset.bv; bagSel = null;
+  renderBag();
+  if (bagView !== 'moves') loadBag();
+});
+$('#b-bag').addEventListener('click', e => {
+  const name = k => (((bag && [...(bag.items || []), ...(bag.balls || [])]) || []).find(x => x.k === k) || {}).name || 'item';
+  const u = e.target.closest('[data-use]');
+  if (u) { const t = u.dataset.n || ''; bagAct({ op: 'use', k: u.dataset.use, target: u.dataset.t }, `Used ${name(u.dataset.use)} on ${t}`); return; }
+  const th = e.target.closest('[data-throw]');
+  if (th && !th.disabled) { bagAct({ op: 'throw', k: th.dataset.throw }, `Threw a ${name(th.dataset.throw)}`); return; }
+  const eq = e.target.closest('[data-equip]');
+  if (eq) { bagAct({ op: 'equip', k: eq.dataset.equip }, `${name(eq.dataset.equip)} is in your hand`); return; }
+  const bi = e.target.closest('[data-bi]');
+  if (bi) { bagSel = bagSel === bi.dataset.bi ? null : bi.dataset.bi; renderBag(); }
+});
+setInterval(() => { if (tab === 'battle' && bagView !== 'moves' && Date.now() - bagLoadedAt > 3000) loadBag(); }, 1000);
+$('#b-view').addEventListener('click', async () => {
+  await act({ kind: 'battle', op: battle && battle.minimised ? 'show' : 'hide' });
   loadBattle();
 });
 setInterval(() => { if (tab === 'battle') loadBattle(); }, 600);
@@ -855,9 +1149,11 @@ async function loadSpawns() {
   try {
     spawnData = await api('/api/spawns');
     spawnBiome = state && state.status ? state.status.biome : null;
+    spawnCondAt = spawnCond();
   } catch (e) { spawnData = null; $('#sp-list').innerHTML = `<div class="note">${esc(e.message)}</div>`; }
   spawnLoading = false;
   renderSpawns();
+  announceTracked();
 }
 function renderSpawns() {
   if (!spawnData) return;
@@ -868,7 +1164,7 @@ function renderSpawns() {
   const html = (spawnData.buckets || []).map(b => {
     const list = b.list.filter(s => !missing || s.dexState !== 'CAUGHT');
     if (!list.length) return '';
-    return `<div class="spb"><h3>${esc(b.bucket.replace('-', ' '))}</h3>` + list.map(s => `<div class="sp">
+    return `<div class="spb"><h3>${esc(b.bucket.replace('-', ' '))}</h3>` + list.map(s => `<div class="sp${spTracked.includes(s.name) ? ' tracked' : ''}" data-sp="${esc(s.name)}">
       ${s.k ? `<img src="${iconUrl(s.k)}" alt="" onerror="this.remove()">` : ''}
       <span class="nm">${esc(s.name)}${s.dex ? ` <span class="note">#${s.dex}</span>` : ''}<br>${typePills((s.types || '').split('/').filter(Boolean))}</span>
       ${s.dexState ? `<span class="badge ${s.dexState}">${LABEL[s.dexState] || s.dexState}</span>` : ''}
@@ -877,12 +1173,40 @@ function renderSpawns() {
   $('#sp-list').innerHTML = html || `<div class="note">${missing ? 'You have caught everything that spawns here.' : 'Nothing can spawn here right now.'}</div>`;
 }
 $('#sp-refresh').addEventListener('click', loadSpawns);
+$('#sp-list').addEventListener('click', e => {
+  const row = e.target.closest('[data-sp]');
+  if (!row) return;
+  const name = row.dataset.sp, on = spTracked.includes(name);
+  sheet(name, on ? 'You are tracking this Pokémon: the panel tells you when it can spawn where you are.' : 'Track it to get a message when it can spawn where you are, from any tab.', [
+    { label: on ? 'Stop tracking' : 'Track ' + name, run: () => { spTracked = on ? spTracked.filter(x => x !== name) : [...spTracked, name]; store.set('spTracked', spTracked); renderSpawns(); } },
+  ]);
+});
 $('#sp-missing').addEventListener('change', renderSpawns);
 setInterval(() => {
   // refresh when you walk into a different biome, or every 30 s (time of day / weather change spawns)
   if (tab !== 'spawns' || !state || !state.status) return;
-  if (state.status.biome !== spawnBiome || Date.now() - (loadSpawns.last || 0) > 30000) { loadSpawns.last = Date.now(); loadSpawns(); }
+  if (state.status.biome !== spawnBiome || spawnCond() !== spawnCondAt || Date.now() - (loadSpawns.last || 0) > 30000) { loadSpawns.last = Date.now(); loadSpawns(); }
 }, 3000);
+// Day/night and weather change what spawns: refresh when they flip, not only on a timer.
+function spawnCond() { const s = state && state.status; return s ? `${s.time >= 12542 && s.time <= 23459 ? 'night' : 'day'}|${s.rain}|${s.thunder}` : ''; }
+let spawnCondAt = '';
+// Tracked Pokémon: say so when one can spawn where you are (checked on biome or weather change, any tab).
+let spTracked = store.get('spTracked', []), spTrackKey = '';
+setInterval(async () => {
+  if (!spTracked.length || !state || !state.status || tab === 'spawns' || spawnLoading) return;
+  const key = state.status.biome + '|' + spawnCond();
+  if (key === spTrackKey) return;
+  spTrackKey = key;
+  await loadSpawns();
+}, 5000);
+function announceTracked() {
+  if (!spawnData || !spTracked.length) return;
+  const here = [];
+  (spawnData.buckets || []).forEach(b => b.list.forEach(s => { if (spTracked.includes(s.name)) here.push(`${s.name} (${s.pct}%)`); }));
+  const msg = here.join(', ');
+  if (msg && msg !== announceTracked.last) toast('Can spawn here: ' + msg, true);
+  announceTracked.last = msg;
+}
 
 // ---------- chat ----------
 let quick = store.get('quick', []);
@@ -898,7 +1222,13 @@ async function loadChatInner() {
   try {
     const r = await api('/api/chat');
     const log = $('#chat-log');
-    log.innerHTML = r.lines.map(l => `<div>${esc(l)}</div>`).join('');
+    const runs = r.rich || r.lines.map(l => [[l, '', false]]);
+    log.innerHTML = runs.map((line, i) => {
+      const text = line.map(x => x[0]).join('');
+      const player = /^<[^>]+>/.test(text);
+      return `<div class="${player ? 'msg-player' : 'msg-system'}">` + line.map(([t, c, b]) =>
+        `<span style="${c ? 'color:' + c + ';' : ''}${b ? 'font-weight:900' : ''}">${esc(t)}</span>`).join('') + '</div>';
+    }).join('');
     log.scrollTop = log.scrollHeight;
   } catch {}
 }
@@ -914,8 +1244,28 @@ $('#chat-save').addEventListener('click', () => {
   if (!v) return toast('Type a message or command first, then ☆ saves it as a button', true);
   if (!quick.includes(v)) { quick.push(v); store.set('quick', quick); renderQuick(); }
 });
+let quickLong = false, quickTimer = null;
+$('#quick-cmds').addEventListener('pointerdown', e => {
+  const b = e.target.closest('[data-q]');
+  quickLong = false;
+  if (!b) return;
+  quickTimer = setTimeout(() => { quickLong = true; quickMenu(Number(b.dataset.q)); }, 500);
+});
+['pointerup', 'pointercancel', 'pointerleave'].forEach(t => $('#quick-cmds').addEventListener(t, () => clearTimeout(quickTimer)));
+function quickMenu(i) {
+  const c = quick[i];
+  const save = () => { store.set('quick', quick); renderQuick(); };
+  sheet(c, 'Edit this quick command.', [
+    { label: 'Send it', run: () => sendChat(c) },
+    { label: 'Edit in the box', sub: 'then ☆ to save the new one', run: () => { $('#chat-input').value = c; quick.splice(i, 1); save(); } },
+    { label: '◀ Earlier', disabled: i === 0, run: () => { quick.splice(i, 1); quick.splice(i - 1, 0, c); save(); } },
+    { label: 'Later ▶', disabled: i === quick.length - 1, run: () => { quick.splice(i, 1); quick.splice(i + 1, 0, c); save(); } },
+    { label: 'Remove', run: () => { quick.splice(i, 1); save(); } },
+  ]);
+}
 $('#quick-cmds').addEventListener('click', e => {
   const b = e.target.closest('[data-q]');
+  if (quickLong) { quickLong = false; return; }
   if (b) sendChat(quick[Number(b.dataset.q)]);
 });
 $('#quick-cmds').addEventListener('contextmenu', e => {
@@ -927,6 +1277,24 @@ $('#quick-cmds').addEventListener('contextmenu', e => {
   renderQuick();
 });
 setInterval(() => { if (tab === 'chat') loadChat(); }, 2500);
+
+// Swipe left/right on an empty part of a page to change tab (not on grids or controls that drag).
+(() => {
+  const order = () => $$('#tabs [data-tab]').map(b => b.dataset.tab);
+  let sx = 0, sy = 0, t0 = 0, ok = false;
+  $('main').addEventListener('pointerdown', e => {
+    ok = !e.target.closest('.slot, .pk, .mon, .ni, .mv, button, input, select, #grid, #pc-main, #net-grid, #chat-log');
+    sx = e.clientX; sy = e.clientY; t0 = Date.now();
+  });
+  $('main').addEventListener('pointerup', e => {
+    if (!ok) return;
+    const dx = e.clientX - sx, dy = e.clientY - sy;
+    if (Math.abs(dx) < 160 || Math.abs(dy) > 90 || Date.now() - t0 > 600) return;
+    const o = order(), i = o.indexOf(tab);
+    const next = o[(i + (dx < 0 ? 1 : -1) + o.length) % o.length];
+    showTab(next);
+  });
+})();
 
 // The Android wrapper keeps its window unfocusable so the controller stays with the game;
 // it only takes focus while a text field is being edited.

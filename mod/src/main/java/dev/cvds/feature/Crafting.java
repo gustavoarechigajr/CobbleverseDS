@@ -21,7 +21,10 @@ public final class Crafting {
 		return mc.player.containerMenu instanceof RecipeBookMenu<?, ?> rb && rb.getRecipeBookType() == RecipeBookType.CRAFTING ? rb : null;
 	}
 
-	public static JsonObject search(Minecraft mc, String query, int limit) {
+	public static JsonObject search(Minecraft mc, String query, int limit) { return search(mc, query, limit, Set.of()); }
+
+	/** {@code favs}: recipe ids that are always listed (first), craftable or not. */
+	public static JsonObject search(Minecraft mc, String query, int limit, Set<String> favs) {
 		JsonObject res = new JsonObject();
 		RecipeBookMenu<?, ?> rb = craftingMenu(mc);
 		if (rb == null) { res.addProperty("error", "no crafting grid open"); return res; }
@@ -31,7 +34,7 @@ public final class Crafting {
 		mc.player.getInventory().fillStackedContents(have);
 		rb.fillCraftSlotsStackedContents(have);
 		var items = new JsonObject();
-		List<JsonObject> craftable = new ArrayList<>(), other = new ArrayList<>();
+		List<JsonObject> craftable = new ArrayList<>(), other = new ArrayList<>(), favList = new ArrayList<>();
 		Set<String> seenOutputs = new HashSet<>();
 		for (RecipeHolder<CraftingRecipe> h : mc.level.getRecipeManager().getAllRecipesFor(RecipeType.CRAFTING)) {
 			CraftingRecipe r = h.value();
@@ -39,9 +42,10 @@ public final class Crafting {
 			ItemStack out = r.getResultItem(mc.level.registryAccess());
 			if (out.isEmpty()) continue;
 			String name = out.getHoverName().getString();
-			if (!q.isEmpty() && !name.toLowerCase(Locale.ROOT).contains(q) && !h.id().toString().contains(q)) continue;
+			boolean fav = favs.contains(h.id().toString());
+			if (!fav && !q.isEmpty() && !name.toLowerCase(Locale.ROOT).contains(q) && !h.id().toString().contains(q)) continue;
 			boolean can = have.canCraft(r, null);
-			if (!can && q.isEmpty()) continue; // unfiltered list shows only what you can make now
+			if (!can && q.isEmpty() && !fav) continue; // unfiltered list shows only what you can make now
 			JsonObject o = new JsonObject();
 			o.addProperty("id", h.id().toString());
 			o.addProperty("k", Snapshot.describe(out, items));
@@ -57,14 +61,41 @@ public final class Crafting {
 			JsonArray ingsJson = new JsonArray();
 			need.forEach((n, c) -> ingsJson.add(c + "× " + n));
 			o.add("ings", ingsJson);
+			o.addProperty("fav", fav);
+			// Ingredients with icons and have/need counts (inventory + grid).
+			Map<String, int[]> counts = new LinkedHashMap<>(); // key -> {need, have}
+			Map<String, Ingredient> byKey = new LinkedHashMap<>();
+			for (Ingredient ing : r.getIngredients()) {
+				ItemStack[] opts = ing.getItems();
+				if (opts.length == 0) continue;
+				String key = Snapshot.describe(opts[0], items);
+				counts.computeIfAbsent(key, k -> new int[2])[0]++;
+				byKey.putIfAbsent(key, ing);
+			}
+			JsonArray ingr = new JsonArray();
+			for (var e : counts.entrySet()) {
+				Ingredient ing = byKey.get(e.getKey());
+				int got = 0;
+				for (ItemStack s : mc.player.getInventory().items) if (!s.isEmpty() && ing.test(s)) got += s.getCount();
+				for (int g : gridSlotsOf(mc)) { ItemStack s = mc.player.containerMenu.slots.get(g).getItem(); if (!s.isEmpty() && ing.test(s)) got += s.getCount(); }
+				JsonObject x = new JsonObject();
+				x.addProperty("k", e.getKey());
+				x.addProperty("need", e.getValue()[0]);
+				x.addProperty("have", got);
+				x.addProperty("any", ing.getItems().length > 1);
+				ingr.add(x);
+			}
+			o.add("ingr", ingr);
 			String dedupe = o.get("k").getAsString() + can;
 			if (!seenOutputs.add(dedupe + h.id())) continue;
-			(can ? craftable : other).add(o);
+			(fav ? favList : can ? craftable : other).add(o);
 		}
 		Comparator<JsonObject> byName = Comparator.comparing(o -> o.get("name").getAsString());
 		craftable.sort(byName);
 		other.sort(byName);
+		favList.sort(byName);
 		JsonArray list = new JsonArray();
+		for (var o : favList) list.add(o);
 		for (var o : craftable) { if (list.size() >= limit) break; list.add(o); }
 		for (var o : other) { if (list.size() >= limit) break; list.add(o); }
 		res.add("recipes", list);
@@ -73,7 +104,10 @@ public final class Crafting {
 	}
 
 	/** Crafts the recipe once (or as many times as possible) and quick-moves the result into the inventory. */
-	public static JsonObject craft(Minecraft mc, String id, boolean max) {
+	public static JsonObject craft(Minecraft mc, String id, boolean max) { return craft(mc, id, max, 1); }
+
+	/** Crafts {@code count} sets (capped at what fits and what you have), or as many as possible with {@code max}. */
+	public static JsonObject craft(Minecraft mc, String id, boolean max, int count) {
 		RecipeBookMenu<?, ?> rb = craftingMenu(mc);
 		if (rb == null) return Api.error("no crafting grid open");
 		var holder = mc.level.getRecipeManager().byKey(ResourceLocation.parse(id)).orElse(null);
@@ -81,7 +115,8 @@ public final class Crafting {
 		MenuInv inv = new MenuInv(mc);
 		if (Snapshot.TOMS && Terminal.craftingTerminal(mc)) {
 			// Tom's crafting terminal fills the grid from the whole storage network on the server.
-			return Terminal.craft(mc, id, max, ItemKeys.key(recipe.getResultItem(mc.level.registryAccess())));
+			// (it fills one set or as many as possible: a count above 1 crafts the maximum)
+			return Terminal.craft(mc, id, max || count > 1, ItemKeys.key(recipe.getResultItem(mc.level.registryAccess())));
 		}
 		clearGrid(inv);
 		for (int g : gridSlots(inv)) if (!inv.empty(g)) return Api.error("inventory full: can't clear the crafting grid");
@@ -89,7 +124,7 @@ public final class Crafting {
 		// ignore that packet for recipes the player hasn't unlocked, and Cobbleverse never unlocks them.
 		List<int[]> plan = plan(inv, rb, recipe);
 		if (plan == null) return Api.error("this recipe doesn't fit the grid");
-		int sets = max ? maxSets(inv, recipe, plan) : (feasible(inv, recipe, plan, 1) ? 1 : 0);
+		int sets = max ? maxSets(inv, recipe, plan) : count <= 1 ? (feasible(inv, recipe, plan, 1) ? 1 : 0) : Math.min(count, maxSets(inv, recipe, plan));
 		if (sets == 0) return Api.error("missing ingredients");
 		if (!place(inv, recipe, plan, sets)) {
 			clearGrid(inv);
@@ -100,6 +135,13 @@ public final class Crafting {
 		JsonObject r = Api.ok();
 		r.addProperty("sets", sets);
 		return r;
+	}
+
+	static List<Integer> gridSlotsOf(Minecraft mc) {
+		List<Integer> grid = new ArrayList<>();
+		var slots = mc.player.containerMenu.slots;
+		for (int i = 0; i < slots.size(); i++) if (Snapshot.group(slots.get(i)).equals("g")) grid.add(i);
+		return grid;
 	}
 
 	static List<Integer> gridSlots(MenuInv inv) {

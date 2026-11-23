@@ -50,13 +50,21 @@ async function fakeFetch(url, opts) {
     if (!opts.headers || opts.headers['X-CVDS'] !== '1') return json({ ok: false, error: 'missing header' });
     actions.push(JSON.parse(opts.body)); return json({ ok: true });
   }
-  if (u.pathname === '/api/keys') return json({ ok: true, keys: [{ id: 'key.inventory', label: 'Inventory', cat: 'Inventory', bound: 'E' }] });
-  if (u.pathname === '/api/recipes') return json({ ok: true, recipes: [], items: {} });
-  if (u.pathname === '/api/chat') return json({ ok: true, lines: ['hello'] });
+  if (u.pathname === '/api/keys') return json({ ok: true, keys: [{ id: 'key.inventory', label: 'Inventory', cat: 'Inventory', bound: 'E' }, { id: 'key.sneak', label: 'Sneak', cat: 'Movement', bound: 'Shift', held: false }] });
+  if (u.pathname === '/api/recipes') return json({ ok: true, recipes: [{ id: 'minecraft:torch', k: 'minecraft:torch', n: 4, name: 'Torch', can: true, fav: false,
+    ingr: [{ k: 'minecraft:coal', need: 1, have: 23 }, { k: 'minecraft:stick', need: 1, have: 8 }] }], items: {} });
+  if (u.pathname === '/api/chat') return json({ ok: true, lines: ['hello'], rich: [[['<Ash> ', '', false], ['hi', '#ff5555', true]]] });
   if (u.pathname === '/api/pc') return json({ sig: 's1', open: true, party: st.party.slots, boxes: [{ name: 'Box 1', slots: [{ id: 'p1', name: 'Eevee', species: 'Eevee', lvl: 5, types: ['Normal'], ivs: { HP: 31 }, ivTotal: 31, moves: ['Tackle'] }, ...Array(29).fill({})] }], items: {}, sortModes: ['NAME'] });
   if (u.pathname === '/api/terminal') return json({ sig: 't1', open: true, menu: 5, list: [{ k: 'minecraft:diamond', n: 1234 }], items: { 'minecraft:diamond': { name: 'Diamond', max: 64 } }, free: 10, slots: 54 });
   if (u.pathname === '/api/spawns') return json({ ok: true, items: {}, buckets: [{ bucket: 'common', list: [{ name: 'Pidgey', pct: 40, dex: 16, dexState: 'CAUGHT', types: 'normal/flying' }, { name: 'Rattata', pct: 35, dex: 19, dexState: 'NONE' }] }, { bucket: 'ultra-rare', list: [] }] });
-  if (u.pathname === '/api/battle') return json(st.battle ? { active: true, mine: [{ name: 'Pikachu', species: 'Pikachu', lvl: 12, hp: 30, maxHp: 35, flat: true, types: ['Electric'] }], theirs: [{ name: 'Gyarados', species: 'Gyarados', lvl: 20, hp: 1, maxHp: 1, flat: false, types: ['Water', 'Flying'] }], request: { singles: true, moves: [{ id: 'thunderbolt', name: 'Thunderbolt', pp: 15, maxPp: 15, type: 'Electric', cat: 'special', power: 90, acc: 100 }], bench: [] } } : { active: false });
+  if (u.pathname === '/api/bag') {
+    if (opts && opts.method === 'POST') { actions.push(Object.assign({ via: 'bag' }, JSON.parse(opts.body))); return json({ ok: true }); }
+    return json({ ok: true, inBattle: true, wild: true, canAct: true, backpacks: true,
+      items: [{ k: 'cobblemon:max_revive', name: 'Max Revive', inv: 64, pack: 0, inGame: false, targets: [{ id: 'p9', name: 'Gengar', hp: 0, maxHp: 104 }] },
+              { k: 'cobblemon:ether', name: 'Ether', inv: 1, pack: 0, inGame: true, targets: [] }],
+      balls: [{ k: 'cobblemon:poke_ball', name: 'Poké Ball', inv: 0, pack: 12 }] });
+  }
+  if (u.pathname === '/api/battle') return json(st.battle && st.waiting ? { active: true, mine: [], theirs: [] } : st.battle ? { active: true, minimised: !!st.minimised, mine: [{ name: 'Pikachu', species: 'Pikachu', lvl: 12, hp: 30, maxHp: 35, flat: true, types: ['Electric'] }], theirs: [{ name: 'Gyarados', species: 'Gyarados', lvl: 20, hp: 1, maxHp: 1, flat: false, types: ['Water', 'Flying'] }], request: { singles: true, moves: [{ id: 'thunderbolt', name: 'Thunderbolt', pp: 15, maxPp: 15, type: 'Electric', cat: 'special', power: 90, acc: 100 }], bench: [] } } : { active: false });
   return { ok: false, status: 404, json: async () => ({ ok: false, error: 'nope' }) };
 }
 
@@ -73,6 +81,7 @@ w.eval(appJs + '\nwindow.__t = { showTab, setLastTouch: v => { lastTouch = v; } 
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const $ = s => w.document.querySelector(s);
+const $$ = s => [...w.document.querySelectorAll(s)];
 const activeTab = () => ($('#tabs button.on') || {}).dataset?.tab;
 
 (async () => {
@@ -118,14 +127,55 @@ const activeTab = () => ($('#tabs button.on') || {}).dataset?.tab;
   const before = actions.length;
   tap($('#grid .slot[data-i="20"]')); await sleep(50);
   check(actions.length === before, 'selection is cleared when the container changes');
+  // long-press a stack: the item menu (replaces the old mode keys)
+  const longPress = async el => { el.dispatchEvent(new w.MouseEvent('pointerdown', { bubbles: true, clientX: 1, clientY: 1 })); await sleep(520); el.dispatchEvent(new w.MouseEvent('pointerup', { bubbles: true, clientX: 1, clientY: 1 })); };
+  const full = $$('#grid .slot').find(el => el.querySelector('img, .txt'));
+  if (full) {
+    await longPress(full);
+    check(!$('#sheet').classList.contains('hidden') && $('#sheet').textContent.includes('Quick move') && $('#sheet').textContent.includes('Drop stack'), 'long-press opens the item menu');
+    actions.length = 0;
+    [...$$('#sheet [data-opt]')].find(b => b.textContent.startsWith('Quick move')).click(); await sleep(50);
+    check(actions.some(a => a.kind === 'inv' && a.op === 'quick'), 'Quick move from the menu');
+  }
+  if (!$('#more').classList.contains('hidden')) {
+    $('#more').click(); await sleep(20);
+    check($('#sheet').textContent.includes('Store all'), 'More… lists the container actions');
+    $('#sheet .close').click();
+  }
   w.__t.showTab('party'); await sleep(100);
   check($('#party').textContent.includes('Pikachu'), 'party tab lists the party');
 
-  // party reorder: tap the reorder handle on slot 0, then slot 2
-  $('#party [data-re="0"]').click(); await sleep(20);
-  $('#party [data-p="2"]').click(); await sleep(50);
+  // party: tap a card for its summary sheet; reorder from the sheet (drag needs a real layout)
+  actions.length = 0;
+  tap($('#party [data-p="0"]')); await sleep(50);
+  check(!$('#sheet').classList.contains('hidden') && $('#sheet').textContent.includes('Pikachu'), 'tapping a party card opens its summary');
+  check(actions.some(a => a.kind === 'party' && a.slot === 0 && !a.send), 'tapping a party card selects it');
+  [...$('#sheet').querySelectorAll('[data-opt]')].find(b => b.textContent.includes('Slot 3')).click(); await sleep(50);
   const re = actions.find(a => a.kind === 'pc' && a.op === 'move');
   check(re && re.from.type === 'party' && re.from.slot === 0 && re.to.slot === 2, 'party reorder sends a party move');
+  check($('#sheet').classList.contains('hidden'), 'choosing an option closes the sheet');
+  actions.length = 0;
+  $('#party [data-send="0"]').click(); await sleep(50);
+  check(actions.some(a => a.kind === 'party' && a.slot === 0 && a.send), 'each card has its own Send out key');
+
+  w.__t.showTab('craft'); await sleep(300);
+  check($('#recipes .ing') && $('#recipes').textContent.includes('23/1'), 'recipes show ingredients with have/need');
+  actions.length = 0; $('#recipes [data-c="4"]').click(); await sleep(50);
+  check(actions.some(a => a.kind === 'craft' && a.count === 4), 'craft ×4 sends a count');
+  $('#recipes [data-fav]').click(); await sleep(100);
+  check(JSON.parse(w.localStorage.getItem('cvds.craftFavs') || '[]').includes('minecraft:torch'), 'starring a recipe saves it');
+
+  w.__t.showTab('keys'); await sleep(300);
+  const sneak = $('#key-list [data-kb="key.sneak"]') || $('#key-favs [data-kb="key.sneak"]');
+  check(sneak && sneak.textContent.includes('tap to hold'), 'hold-type keys say tap to hold');
+  actions.length = 0; sneak.click(); await sleep(50);
+  check(actions.some(a => a.kind === 'key' && a.id === 'key.sneak' && a.hold === true), 'tapping a hold key holds it');
+
+  w.__t.showTab('pc'); await sleep(400);
+  check($('#pc-detail').textContent.includes('/30 Pokémon'), 'PC details show a box summary when nothing is selected');
+
+  w.__t.showTab('chat'); await sleep(300);
+  check(!!$('#chat-log span[style*="#ff5555"]'), 'chat keeps message colours');
 
   w.__t.showTab('spawns'); await sleep(200);
   check($('#sp-list').textContent.includes('Rattata') && $('#sp-list').textContent.includes('Caught'), 'spawn list shows species and dex status');
@@ -140,7 +190,38 @@ const activeTab = () => ($('#tabs button.on') || {}).dataset?.tab;
   check(activeTab() === 'battle', 'battle start switches to the Battle tab');
   await sleep(700);
   check($('#b-moves').textContent.includes('×4'), 'Thunderbolt vs Water/Flying shows ×4');
+  // a turn plays out (no request) and comes back unchanged: moves and Switch must be drawn again
+  st.waiting = true; await sleep(800);
+  st.waiting = false; await sleep(800);
+  check($$('#b-moves .mv').length > 0, 'moves come back after the turn plays out');
+  actions.length = 0; tap($('#b-moves .mv')); await sleep(50);
+  check(actions.some(a => a.kind === 'battle' && a.op === 'move' && a.id === 'thunderbolt'), 'tapping a move chooses it');
   check(!$('#st-main').textContent.includes('Waiting'), 'no render error during battle');
+  check(!$('#b-view').classList.contains('hidden') && $('#b-view').textContent === 'Move around', 'battle shows a Move around key');
+  actions.length = 0; $('#b-view').click(); await sleep(50);
+  check(actions.some(a => a.kind === 'battle' && a.op === 'hide'), 'Move around hides the battle screen');
+  st.minimised = true; await sleep(700);
+  check($('#b-view').textContent === 'Back to battle' && $('#b-note').textContent.includes('you can move'), 'hidden battle offers Back to battle');
+  actions.length = 0; $('#b-view').click(); await sleep(50);
+  check(actions.some(a => a.kind === 'battle' && a.op === 'show'), 'Back to battle reopens the battle screen');
+  st.minimised = false;
+  $('#b-views [data-bv="bag"]').click(); await sleep(100);
+  check(!$('#b-bag').classList.contains('hidden') && $('#b-moves').classList.contains('hidden'), 'Bag view replaces the moves');
+  check($('#b-bag').textContent.includes('Max Revive') && $('#b-bag').textContent.includes('Ether'), 'Bag lists battle items');
+  $('#b-bag [data-bi="cobblemon:max_revive"]').click(); await sleep(20);
+  check(!!$('#b-bag [data-use]'), 'tapping an item shows who it can be used on');
+  actions.length = 0; $('#b-bag [data-use]').click(); await sleep(100);
+  check(actions.some(a => a.via === 'bag' && a.op === 'use' && a.k === 'cobblemon:max_revive' && a.target === 'p9'), 'using an item sends item + target');
+  $('#b-bag [data-bi="cobblemon:ether"]').click(); await sleep(20);
+  check($('#b-bag').textContent.includes('game screen') && !$('#b-bag [data-use]'), 'PP items say to use them in game');
+  $('#b-views [data-bv="balls"]').click(); await sleep(100);
+  check($('#b-bag').textContent.includes('backpack'), 'balls from the backpack are marked');
+  actions.length = 0; $('#b-bag [data-throw]').click(); await sleep(100);
+  check(actions.some(a => a.via === 'bag' && a.op === 'throw' && a.k === 'cobblemon:poke_ball'), 'Throw sends the ball');
+  actions.length = 0; $('#b-bag [data-equip]').click(); await sleep(100);
+  check(actions.some(a => a.via === 'bag' && a.op === 'equip'), 'Equip sends the ball');
+  $('#b-views [data-bv="moves"]').click(); await sleep(50);
+  check(!$('#b-moves').classList.contains('hidden'), 'Moves view comes back');
 
   setState('none'); await sleep(300);
   check(activeTab() === 'pc', 'battle end returns to the previous tab');
@@ -150,6 +231,9 @@ const activeTab = () => ($('#tabs button.on') || {}).dataset?.tab;
   check(!$('#net').classList.contains('hidden'), 'terminal shows the network panel');
   check($('#net-grid').textContent.includes('1.2k'), 'network counts are abbreviated');
   check($('#bulk [data-bulk="take"]').classList.contains('hidden'), 'terminal hides Take all');
+  $('#more').click(); await sleep(20);
+  check(!$('#more').classList.contains('hidden') && $('#sheet').textContent.includes('Store all') && !$('#sheet').textContent.includes('Take all'), 'More… lists the container actions that apply');
+  $('#sheet .close').click(); await sleep(20);
   const n0 = actions.length;
   const tile = $('#net-grid .ni');
   tile.dispatchEvent(new w.MouseEvent('pointerdown', { bubbles: true })); tile.dispatchEvent(new w.MouseEvent('pointerup', { bubbles: true })); tile.click();
@@ -164,6 +248,13 @@ const activeTab = () => ($('#tabs button.on') || {}).dataset?.tab;
   setState('chest'); await sleep(200);
   check(!$('#shade').classList.contains('on'), 'opening a container wakes the screen');
 
+  w.__t.showTab('spawns'); await sleep(200);
+  const row = $('#sp-list [data-sp]');
+  if (row) {
+    row.click(); await sleep(20);
+    [...$$('#sheet [data-opt]')].find(b => b.textContent.startsWith('Track')).click(); await sleep(50);
+    check(JSON.parse(w.localStorage.getItem('cvds.spTracked') || '[]').length === 1, 'tracking a spawn saves it');
+  }
   check(errors.length === 0, 'no console errors' + (errors.length ? ': ' + errors[0] : ''));
   console.log(failures ? `\n${failures} UI checks failed` : '\nall UI checks passed');
   process.exit(failures ? 1 : 0);

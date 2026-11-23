@@ -11,6 +11,7 @@ import com.cobblemon.mod.common.client.battle.ClientBattle;
 import com.cobblemon.mod.common.client.battle.ClientBattlePokemon;
 import com.cobblemon.mod.common.client.battle.ClientBattleSide;
 import com.cobblemon.mod.common.client.battle.SingleActionRequest;
+import com.cobblemon.mod.common.client.gui.battle.BattleGUI;
 import com.cobblemon.mod.common.pokemon.Pokemon;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
@@ -39,6 +40,7 @@ final class Battle {
 		if (b == null) return o;
 		o.addProperty("spectating", b.getSpectating());
 		o.addProperty("wild", b.getWildActor() != null);
+		o.addProperty("minimised", b.getMinimised());
 		ClientBattleSide mine = mySide(mc, b);
 		ClientBattleSide theirs = mine == b.getSide1() ? b.getSide2() : b.getSide1();
 		o.add("mine", side(mine));
@@ -58,7 +60,22 @@ final class Battle {
 					m.addProperty("disabled", mv.getDisabled());
 					MoveTemplate t = Moves.INSTANCE.getByName(mv.getId());
 					m.addProperty("name", t != null ? t.getDisplayName().getString() : mv.getMove());
+					// Legal targets (double battles need one picked); null target list = no target needed.
+					try {
+						var tl = mv.getTarget().getTargetList().invoke(req.getActivePokemon());
+						JsonArray ts = new JsonArray();
+						if (tl != null) for (var tg : tl) {
+							JsonObject x = new JsonObject();
+							x.addProperty("pnx", tg.getPNX());
+							x.addProperty("ally", tg.isAllied(req.getActivePokemon()));
+							if (tg instanceof ActiveClientBattlePokemon ap && ap.getBattlePokemon() != null)
+								x.addProperty("name", ap.getBattlePokemon().getDisplayName().getString());
+							ts.add(x);
+						}
+						m.add("targets", ts);
+					} catch (Throwable ignored) {}
 					if (t != null) {
+						try { m.addProperty("desc", t.getDescription().getString()); } catch (Throwable ignored) {}
 						m.addProperty("type", t.getElementalType().getName());
 						m.addProperty("cat", t.getDamageCategory().getName());
 						m.addProperty("power", t.getPower());
@@ -105,6 +122,9 @@ final class Battle {
 			JsonObject m = new JsonObject();
 			m.addProperty("name", p.getDisplayName().getString());
 			m.addProperty("species", p.getSpecies().getTranslatedName().getString());
+			m.addProperty("pnx", a.getPNX());
+			// Sprite: the same high-res Pokémon render the party uses.
+			try { m.addProperty("k", ItemKeys.key(com.cobblemon.mod.common.item.PokemonItem.Companion.from(p.getProperties(), 1))); } catch (Throwable ignored) {}
 			m.addProperty("lvl", p.getLevel());
 			// isHpFlat: absolute HP (own side); otherwise a 0..1 fraction (opponents).
 			m.addProperty("hp", p.getHpValue());
@@ -129,22 +149,36 @@ final class Battle {
 	static JsonObject choose(Minecraft mc, JsonObject a) {
 		ClientBattle b = CobblemonClient.INSTANCE.getBattle();
 		if (b == null) return Api.error("not in a battle");
+		String op = a.get("op").getAsString();
+		// "Move around": what Cobblemon's own key does in BattleGUI (minimizeBattle / PartySendBinding).
+		// Minimised, the battle screen fades out and closes itself; the battle keeps running.
+		if (op.equals("hide")) {
+			b.setMinimised(true);
+			return Api.ok();
+		}
+		if (op.equals("show")) {
+			b.setMinimised(false);
+			if (!(mc.screen instanceof BattleGUI)) mc.setScreen(new BattleGUI());
+			return Api.ok();
+		}
 		SingleActionRequest req = b.getMustChoose() ? b.getFirstUnansweredRequest() : null;
 		if (req == null) return Api.error("nothing to choose right now");
-		String op = a.get("op").getAsString();
 		if (op.equals("move")) {
 			if (req.getForceSwitch() || req.getMoveSet() == null) return Api.error("you have to switch");
 			String id = a.get("id").getAsString();
 			InBattleMove mv = req.getMoveSet().getMoves().stream().filter(m -> m.getId().equals(id)).findFirst().orElse(null);
 			if (mv == null) return Api.error("unknown move");
 			if (mv.getDisabled() || mv.getPp() <= 0) return Api.error("that move can't be used");
-			if (b.getBattleFormat().getBattleType().getSlotsPerActor() != 1) return Api.error("pick targets on the game screen in double battles");
 			// Same targeting rule as Cobblemon's battle screen: the move's target type gives the
-			// legal targets (null = no target needed, e.g. self or field moves).
+			// legal targets (null = no target needed, e.g. self or field moves). The panel picks one in
+			// double battles; otherwise the first opponent.
 			String pnx = null;
 			var targets = mv.getTarget().getTargetList().invoke(req.getActivePokemon());
 			if (targets != null && !targets.isEmpty()) {
-				var t = targets.stream().filter(x -> !x.isAllied(req.getActivePokemon())).findFirst().orElse(targets.get(0));
+				String want = a.has("target") ? a.get("target").getAsString() : null;
+				var t = want != null ? targets.stream().filter(x -> want.equals(x.getPNX())).findFirst().orElse(null)
+					: targets.stream().filter(x -> !x.isAllied(req.getActivePokemon())).findFirst().orElse(targets.get(0));
+				if (t == null) return Api.error("that target can't be hit by this move");
 				pnx = t.getPNX();
 			}
 			req.setResponse(new MoveActionResponse(id, pnx, null));
