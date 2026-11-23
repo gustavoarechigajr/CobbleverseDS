@@ -7,17 +7,21 @@
 <link rel="stylesheet" href="app.css">
 </head>
 <body>
-<header id="status"><span id="st-main">Waiting for the game…</span><span id="st-side"></span></header>
+<header id="status">
+  <div id="lens" aria-hidden="true"></div>
+  <div id="leds" title="Green: connected · yellow: waiting for a world · red: game not reachable"><i class="led r"></i><i class="led y"></i><i class="led g"></i></div>
+  <div id="st-text"><span id="st-main">Waiting for the game…</span><span id="st-side"></span></div>
+</header>
 <div id="app">
   <nav id="tabs">
-    <button data-tab="storage" class="on">Storage</button>
-    <button data-tab="craft">Craft</button>
-    <button data-tab="keys">Keys</button>
-    <button data-tab="party">Party</button>
-    <button data-tab="pc">PC</button>
-    <button data-tab="battle">Battle</button>
-    <button data-tab="spawns">Spawns</button>
-    <button data-tab="chat">Chat</button>
+    <button data-tab="storage" class="on"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h12v2H2zM1 6h14v8H1zM7 8h2v3H7z"/></svg><span>Storage</span></button>
+    <button data-tab="craft"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h3v3H2zM6.5 2h3v3h-3zM11 2h3v3h-3zM2 6.5h3v3H2zM6.5 6.5h3v3h-3zM11 6.5h3v3h-3zM2 11h3v3H2zM6.5 11h3v3h-3zM11 11h3v3h-3z"/></svg><span>Craft</span></button>
+    <button data-tab="keys"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 5h6v6H2zM4 7h2v2H4zM8 7h7v2H8zM12 9h2v3h-2zM9 9h2v2H9z"/></svg><span>Keys</span></button>
+    <button data-tab="party"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 1h6v1h2v2h1v3H2V4h1V2h2zM2 9h12v3h-1v2h-2v1H5v-1H3v-2H2zM6 6h4v4H6zM7 7h2v2H7z"/></svg><span>Party</span></button>
+    <button data-tab="pc"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 2h14v9H1zM3 4h10v5H3zM6 12h4v1H6zM4 13h8v2H4z"/></svg><span>PC</span></button>
+    <button data-tab="battle"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9 1h4l-3 5h3l-6 9 1-6H5z"/></svg><span>Battle</span></button>
+    <button data-tab="spawns"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 14h12v1H2zM3 9h2v5H3zM6 6h2v8H6zM9 8h2v6H9zM12 10h1v4h-1zM4 7h1v2H4zM8 4h1v2H8zM11 6h1v2h-1z"/></svg><span>Spawns</span></button>
+    <button data-tab="chat"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 2h14v9H7l-4 3v-3H1zM4 5h8v1H4zM4 7h6v1H4z"/></svg><span>Chat</span></button>
   </nav>
   <main>
     <section id="tab-storage" class="tab on">

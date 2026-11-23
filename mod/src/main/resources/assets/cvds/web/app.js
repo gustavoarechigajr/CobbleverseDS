@@ -50,7 +50,7 @@ async function pollLoop() {
         try { render(); } catch (e) { console.error(e); toast('UI error: ' + e.message); }
       }
     } catch (e) {
-      setStatus('Waiting for the game…', '');
+      setStatus('Waiting for the game…', '', 'down');
       await sleep(1000);
     }
   }
@@ -68,9 +68,10 @@ function toast(msg, info) {
 }
 
 // ---------- status bar ----------
-function setStatus(main, side) {
+function setStatus(main, side, conn) {
   $('#st-main').textContent = main;
   $('#st-side').textContent = side;
+  if (conn) document.body.dataset.conn = conn; // drives the Pokédex LEDs
 }
 
 function clock(t) {
@@ -79,12 +80,11 @@ function clock(t) {
 }
 
 function renderStatus() {
-  if (!state || !state.inGame) return setStatus(state && state.error ? 'Error: ' + state.error : 'Not in a world', '');
+  if (!state || !state.inGame) return setStatus(state && state.error ? 'Error: ' + state.error : 'Not in a world', '', state && state.error ? 'down' : 'wait');
   const s = state.status;
   const weather = s.thunder ? 'Thunder' : s.rain ? 'Rain' : 'Clear';
-  const sleepTxt = s.canSleep ? ' · Can sleep' : '';
-  setStatus(`${s.x}, ${s.y}, ${s.z} · ${s.biomeName || s.biome || ''}`,
-    `${s.fps != null ? s.fps + ' fps · ' : ''}Day ${s.day} ${clock(s.time)} · ${weather}${sleepTxt} · ♥ ${Math.ceil(s.hp)}/${Math.round(s.maxHp)} · 🍗 ${s.food} · Lv ${s.xp}`);
+  setStatus(`${s.biomeName || s.biome || ''}  ${s.x}, ${s.y}, ${s.z}`,
+    `Day ${s.day} ${clock(s.time)}  ${weather}${s.canSleep ? '  Can sleep' : ''}  ♥ ${Math.ceil(s.hp)}  🍗 ${s.food}  Lv ${s.xp}${s.fps != null ? '  ' + s.fps + ' fps' : ''}`, 'ok');
 }
 
 // ---------- tabs ----------
@@ -405,7 +405,7 @@ async function loadRecipes() {
       <div class="meta"><div class="name">${esc(r.name)}${r.n > 1 ? ' ×' + r.n : ''}</div>
       <div class="sub">${esc((r.ings || []).join(', ')) || (r.can ? 'Can craft' : 'Missing ingredients')}</div></div>
       <div class="acts"><button data-c="1" ${r.can ? '' : 'disabled'}>Craft 1</button><button data-c="max" ${r.can ? '' : 'disabled'}>Max</button></div>
-    </div>`).join('') || '<div class="note">No recipes match.</div>';
+    </div>`).join('') || `<div class="note">${q ? 'No recipe makes "' + esc(q) + '".' : 'Nothing in your inventory can be crafted on this grid. Search for an item to see its recipe.'}</div>`;
 }
 
 $('#recipes').addEventListener('click', async e => {
@@ -479,7 +479,7 @@ function renderParty() {
       <div class="nm">${esc(m.name)}${m.shiny ? ' ✨' : ''}</div>
       <div class="sub">Lv ${m.lvl} · ${m.hp}/${m.maxHp} HP${m.fainted ? ' · Fainted' : ''}${m.status ? ' · ' + esc(m.status.toUpperCase()) : ''}</div>
       <div class="hp"><i style="width:${Math.round(frac * 100)}%;background:hsl(${hue},75%,45%)"></i></div>
-      <div>${(m.types || []).map(t => `<span class="pill">${esc(t)}</span>`).join('')}</div>
+      <div>${typePills(m.types)}</div>
       ${m.held ? `<div class="sub">Holding ${esc(m.held)}</div>` : ''}
     </div>`;
   }).join('');
@@ -715,7 +715,9 @@ function hpBar(m) {
   const txt = m.flat ? `${Math.round(m.hp)}/${Math.round(m.maxHp)} HP` : `${Math.round(frac * 100)}% HP`;
   return `<div class="sub">${txt}</div><div class="hp"><i style="width:${Math.round(frac * 100)}%;background:hsl(${hue},75%,45%)"></i></div>`;
 }
-function typePills(types) { return (types || []).map(t => `<span class="pill" style="background:${TYPE_COLOR[t.toLowerCase()] || '#555'}">${esc(t)}</span>`).join(''); }
+const LIGHT_TYPES = new Set(['electric', 'ice', 'normal', 'fairy', 'ground', 'steel', 'flying', 'rock', 'bug']);
+function typeInk(t) { return LIGHT_TYPES.has((t || '').toLowerCase()) ? 'color:#141414;text-shadow:none' : ''; }
+function typePills(types) { return (types || []).map(t => `<span class="pill" style="background:${TYPE_COLOR[t.toLowerCase()] || '#555'};${typeInk(t)}">${esc(t)}</span>`).join(''); }
 function monCard(m, foe) {
   const st = Object.entries(m.stages || {}).map(([k, v]) => `<span class="stage ${v > 0 ? 'up' : 'down'}">${esc(k.toUpperCase())} ${v > 0 ? '+' : ''}${v}</span>`).join('');
   return `<div class="bm ${foe ? 'foe' : ''}"><div class="nm">${esc(m.name)}${m.shiny ? ' ★' : ''} <span class="sub">Lv ${m.lvl}${m.status ? ' · ' + esc(m.status.toUpperCase()) : ''}</span></div>
@@ -749,7 +751,7 @@ function renderBattle() {
     const col = TYPE_COLOR[(m.type || '').toLowerCase()] || '#555';
     const pow = m.power > 0 ? `Power ${Math.round(m.power)}` : '';
     const acc = m.acc > 0 ? `Acc ${Math.round(m.acc)}%` : '';
-    return `<button class="mv" data-move="${esc(m.id)}" style="border-color:${col};background:linear-gradient(135deg, ${col}55, var(--panel2))" ${m.disabled || m.pp <= 0 || !r.singles ? 'disabled' : ''}>
+    return `<button class="mv" data-move="${esc(m.id)}" style="background:linear-gradient(180deg, ${col}, color-mix(in srgb, ${col} 75%, #000));${typeInk(m.type)}" ${m.disabled || m.pp <= 0 || !r.singles ? 'disabled' : ''}>
       <span class="t">${esc(m.name)}</span>
       <span class="row"><span>${esc(m.type || '')} · ${esc(m.cat || '')}${stab ? ' · STAB' : ''}</span><span>PP ${m.pp}/${m.maxPp}</span></span>
       <span class="row"><span>${pow} ${acc}</span></span>
@@ -804,7 +806,7 @@ function renderSpawns() {
     if (!list.length) return '';
     return `<div class="spb"><h3>${esc(b.bucket.replace('-', ' '))}</h3>` + list.map(s => `<div class="sp">
       ${s.k ? `<img src="${iconUrl(s.k)}" alt="" onerror="this.remove()">` : ''}
-      <span class="nm">${esc(s.name)}${s.dex ? ` <span class="note">#${s.dex}</span>` : ''}<br><span class="note">${esc(s.types || '')}</span></span>
+      <span class="nm">${esc(s.name)}${s.dex ? ` <span class="note">#${s.dex}</span>` : ''}<br>${typePills((s.types || '').split('/').filter(Boolean))}</span>
       ${s.dexState ? `<span class="badge ${s.dexState}">${LABEL[s.dexState] || s.dexState}</span>` : ''}
       <span class="pct">${s.pct}%</span></div>`).join('') + '</div>';
   }).join('');

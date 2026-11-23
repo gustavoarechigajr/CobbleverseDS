@@ -43,6 +43,9 @@ The app's window never takes input focus (except while you type). Launching any 
 
 The local API only accepts requests from its own page: POSTs need the `X-CVDS: 1` header and the Host/Origin must be localhost, so web pages in the phone's browser can't drive the game.
 
+## Design
+The panel is styled as a Pokédex, after Cobbleverse's own Pokédex menu art and logo: a red shell, a blue lens, and three LEDs that show the connection (green: connected, yellow: no world loaded, red: game not reachable). Keys use the logo's black-outlined sticker look; slots copy the Cobblemon Interface pack. Fonts: Pixelify Sans and Nunito (SIL OFL, bundled in `web/fonts`). `python3 -I tests/mock_server.py` serves the UI with sample data for design work without a game.
+
 ## Tests
 - UI: `cd tests && npm install && node ui_test.js` runs the real page in jsdom against a fake server (tab auto-switching, tap-tap moves, battle/PC/terminal panels, idle blackout). `node tests/typechart_test.js` checks the type chart.
 - Unit tests: `cd mod && ./gradlew test` (HTTP parsing, and fuzzing of the move and sort planner against a model of vanilla click rules).

@@ -26,6 +26,7 @@ public final class Api implements dev.cvds.net.MiniHttpServer.Handler {
 		if (origin != null && !origin.equals("null") && !localHost(origin.replaceFirst("^https?://", ""))) return Response.text(403, "text/plain", "bad origin");
 		if (req.method().equals("POST") && !"1".equals(req.headers().get("x-cvds"))) return Response.text(403, "text/plain", "missing X-CVDS header");
 		if (req.method().equals("GET") && STATIC.containsKey(path)) return asset(STATIC.get(path));
+		if (req.method().equals("GET") && path.matches("/fonts/[a-z0-9-]+\\.woff2")) return asset(path.substring(1));
 		if (path.equals("/api/state")) {
 			long since = parseLong(req.query().get("rev"), -1);
 			long wait = Math.min(parseLong(req.query().get("wait"), 1500), 5000);
@@ -167,6 +168,7 @@ public final class Api implements dev.cvds.net.MiniHttpServer.Handler {
 	static Response asset(String name) throws Exception {
 		try (InputStream in = Api.class.getResourceAsStream("/assets/cvds/web/" + name)) {
 			if (in == null) return Response.notFound();
+			if (name.endsWith(".woff2")) return new Response(200, "font/woff2", in.readAllBytes(), Map.of("Cache-Control", "max-age=604800"));
 			String type = name.endsWith(".html") ? "text/html; charset=utf-8" : name.endsWith(".js") ? "text/javascript; charset=utf-8" : "text/css; charset=utf-8";
 			return new Response(200, type, in.readAllBytes(), Map.of());
 		}
