@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "id": "cvds",
+  "version": "${version}",
+  "name": "Cobbleverse DS",
+  "description": "Second-screen companion for handhelds: a touch UI for storage, crafting, keybinds, party and chat, served on localhost.",
+  "authors": ["gustavoarechigajr"],
+  "license": "MIT",
+  "environment": "client",
+  "entrypoints": {
+    "client": ["dev.cvds.CvdsClient"]
+  },
+  "mixins": ["cvds.mixins.json"],
+  "depends": {
+    "fabricloader": ">=0.16.0",
+    "minecraft": "~1.21.1",
+    "java": ">=21",
+    "fabric-api": "*"
+  },
+  "suggests": {
+    "cobblemon": "*"
+  }
+}

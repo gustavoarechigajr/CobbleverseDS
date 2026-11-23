@@ -1,0 +1,8 @@
+mod/build/
+mod/.gradle/
+mod/run/
+mod/libs/
+android/build/
+*.apk
+*.keystore
+tests/__pycache__/
