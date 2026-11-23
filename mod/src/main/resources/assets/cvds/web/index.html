@@ -14,6 +14,7 @@
     <button data-tab="craft">Craft</button>
     <button data-tab="keys">Keys</button>
     <button data-tab="party">Party</button>
+    <button data-tab="pc">PC</button>
     <button data-tab="chat">Chat</button>
   </nav>
   <main>
@@ -59,6 +60,26 @@
     <section id="tab-party" class="tab">
       <div id="party" class="party"></div>
       <div class="bar"><button id="party-send" class="big">Send out / recall selected</button></div>
+    </section>
+    <section id="tab-pc" class="tab">
+      <div class="bar">
+        <button id="pc-prev" class="nav">◀</button>
+        <select id="pc-box"></select>
+        <button id="pc-next" class="nav">▶</button>
+        <input id="pc-search" type="search" placeholder="Search all boxes: name, type, shiny" autocomplete="off">
+      </div>
+      <div id="pc-note" class="note"></div>
+      <div id="pc-results" class="chips hidden"></div>
+      <div id="pc-main">
+        <div id="pc-grid"></div>
+        <div id="pc-party"></div>
+        <div id="pc-detail" class="note">Tap a Pokémon to see details. Tap one, then tap another slot to move or swap them.</div>
+      </div>
+      <div class="bar">
+        <select id="pc-sortmode"></select>
+        <button id="pc-sort">Sort box</button>
+        <button id="pc-release" class="danger hidden">Release</button>
+      </div>
     </section>
     <section id="tab-chat" class="tab">
       <div id="chat-log"></div>

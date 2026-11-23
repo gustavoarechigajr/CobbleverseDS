@@ -33,6 +33,17 @@ public final class Api implements dev.cvds.net.MiniHttpServer.Handler {
 		switch (path) {
 			case "/api/keys": return onClient(mc, () -> mc.options == null ? error("not ready") : wrap("keys", Keys.list(mc)));
 			case "/api/chat": return onClient(mc, () -> mc.player == null ? error("not in game") : wrap("lines", Chat.recent(mc, 30)));
+			case "/api/pc": {
+				if (!Snapshot.COBBLEMON) return Response.json(error("cobblemon not installed").toString());
+				String since = req.query().getOrDefault("sig", "");
+				return onClientRaw(mc, () -> {
+					if (mc.player == null) return error("not in game").toString();
+					String body = Pc.json(mc).toString();
+					String sig = Integer.toHexString(body.hashCode());
+					// Unchanged since the caller's copy: skip resending a whole PC.
+					return sig.equals(since) ? "{\"same\":true,\"sig\":\"" + sig + "\"}" : "{\"sig\":\"" + sig + "\"," + body.substring(1);
+				});
+			}
 			case "/api/recipes": {
 				String q = req.query().getOrDefault("q", "");
 				return onClient(mc, () -> mc.player == null ? error("not in game") : Crafting.search(mc, q, 60));
@@ -65,6 +76,7 @@ public final class Api implements dev.cvds.net.MiniHttpServer.Handler {
 				if (a.has("send") && a.get("send").getAsBoolean()) Party.sendOut(mc, slot); else Party.select(slot);
 				yield ok();
 			}
+			case "pc" -> Snapshot.COBBLEMON ? Pc.action(mc, a) : error("cobblemon not installed");
 			case "hotbarSelect" -> {
 				int s = a.get("slot").getAsInt();
 				if (s < 0 || s > 8) yield error("0-8");
@@ -88,6 +100,21 @@ public final class Api implements dev.cvds.net.MiniHttpServer.Handler {
 			r = error("game did not respond in time");
 		}
 		return Response.json(r.toString());
+	}
+
+	interface ClientText { String call() throws Exception; }
+
+	static Response onClientRaw(Minecraft mc, ClientText c) throws Exception {
+		String r;
+		try {
+			r = mc.submit(() -> {
+				try { return c.call(); }
+				catch (Exception e) { return error(e.getClass().getSimpleName() + ": " + e.getMessage()).toString(); }
+			}).get(5, TimeUnit.SECONDS);
+		} catch (java.util.concurrent.TimeoutException e) {
+			r = error("game did not respond in time").toString();
+		}
+		return Response.json(r);
 	}
 
 	static JsonObject wrap(String field, JsonElement e) { JsonObject o = ok(); o.add(field, e); return o; }

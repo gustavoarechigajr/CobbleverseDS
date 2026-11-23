@@ -71,6 +71,7 @@ public final class Snapshot {
 		else if (mc.screen instanceof CreativeModeInventoryScreen) kind = "creative";
 		else if (mc.screen instanceof AbstractContainerScreen<?>) kind = "container";
 		else kind = "other";
+		if (COBBLEMON && "other".equals(kind) && PcScreen.isPc(mc.screen)) kind = "pc";
 		screen.addProperty("kind", kind);
 		if (mc.screen != null) {
 			screen.addProperty("cls", mc.screen.getClass().getName());

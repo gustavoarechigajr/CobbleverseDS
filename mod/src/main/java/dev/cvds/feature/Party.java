@@ -20,6 +20,7 @@ final class Party {
 			Pokemon p = i < party.getSlots().size() ? party.getSlots().get(i) : null;
 			if (p == null) { slots.add(new JsonObject()); continue; }
 			JsonObject s = new JsonObject();
+			s.addProperty("id", p.getUuid().toString());
 			s.addProperty("name", p.getDisplayName(false).getString());
 			s.addProperty("species", p.getSpecies().getName());
 			s.addProperty("lvl", p.getLevel());

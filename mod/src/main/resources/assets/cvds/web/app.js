@@ -94,6 +94,7 @@ function showTab(name) {
   if (name === 'keys') loadKeys();
   if (name === 'craft') loadRecipes();
   if (name === 'chat') loadChat();
+  if (name === 'pc') { pcSig = ''; loadPc(); }
   render();
 }
 $$('#tabs button').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
@@ -104,6 +105,7 @@ function render() {
   const kind = state.screen && state.screen.kind;
   if (kind !== lastScreenKind) {
     if (kind === 'container' && lastScreenKind !== null) { showTab('storage'); wake(); }
+    if (kind === 'pc' && lastScreenKind !== null) { showTab('pc'); wake(); }
     if (kind === 'container' && tab === 'craft') loadRecipes();
     lastScreenKind = kind;
   }
@@ -410,6 +412,158 @@ $('#party').addEventListener('click', e => {
 $('#party-send').addEventListener('click', () => {
   if (state && state.party) act({ kind: 'party', slot: state.party.sel, send: true });
 });
+
+
+// ---------- Cobblemon PC ----------
+let pc = null, pcSig = '', pcBox = store.get('pcBox', 0), pcSel = null; // pcSel: {type, box?, slot, id}
+let pcTimer = null;
+const STAT_LABEL = { HP: 'HP', ATTACK: 'Atk', DEFENCE: 'Def', SPECIAL_ATTACK: 'SpA', SPECIAL_DEFENCE: 'SpD', SPEED: 'Spe' };
+
+async function loadPc() {
+  try {
+    const r = await api('/api/pc?sig=' + pcSig);
+    if (r.same) return;
+    pcSig = r.sig;
+    pc = r;
+    renderPc();
+  } catch (e) {
+    $('#pc-note').textContent = e.message;
+  }
+}
+function pcLoop() {
+  clearInterval(pcTimer);
+  pcTimer = setInterval(() => { if (tab === 'pc') loadPc(); }, 1000);
+}
+
+function monAt(ref) {
+  if (!pc || !ref) return null;
+  const m = ref.type === 'pc' ? (((pc.boxes || [])[ref.box] || {}).slots || [])[ref.slot] : (pc.party || [])[ref.slot];
+  return m && m.id ? m : null;
+}
+function sameRef(a, b) { return a && b && a.type === b.type && a.slot === b.slot && (a.type !== 'pc' || a.box === b.box); }
+function monMatches(m, q) {
+  if (!q) return false;
+  const hay = [m.name, m.species, ...(m.types || []), m.shiny ? 'shiny' : '', m.nature, m.ability, m.held || ''].join(' ').toLowerCase();
+  return q.split(/\s+/).every(w => hay.includes(w));
+}
+
+function pkCell(m, ref, q) {
+  let cls = 'pk' + (ref.type === 'party' ? ' party' : '');
+  if (sameRef(ref, pcSel)) cls += ' sel';
+  if (q) cls += m && m.id && monMatches(m, q) ? ' hit' : ' miss';
+  const data = `data-type="${ref.type}" data-slot="${ref.slot}"` + (ref.type === 'pc' ? ` data-box="${ref.box}"` : '');
+  if (!m || !m.id) return `<div class="${cls}" ${data}></div>`;
+  if (m.hp === 0 || m.fainted) cls += ' faint';
+  const img = m.k ? `<img src="${iconUrl(m.k)}" alt="" onerror="this.remove()">` : '';
+  return `<div class="${cls}" ${data}>${img}<span class="lv">Lv${m.lvl}</span>${m.shiny ? '<span class="shiny">★</span>' : ''}<span class="nm">${esc(m.name)}</span></div>`;
+}
+
+function renderPc() {
+  if (!pc) return;
+  const boxes = pc.boxes || [];
+  pcBox = Math.max(0, Math.min(pcBox, boxes.length - 1));
+  $('#pc-note').textContent = !boxes.length ? 'Open a PC in game once to load your boxes.' :
+    pc.open ? '' : 'Browsing your last-opened PC. Open a PC in game to move, sort or release.';
+  const sel = $('#pc-box');
+  const opts = boxes.map((b, i) => `<option value="${i}">${esc(b.name || 'Box ' + (i + 1))} (${b.slots.filter(m => m.id).length})</option>`).join('');
+  if (sel.dataset.opts !== opts) { sel.innerHTML = opts; sel.dataset.opts = opts; }
+  sel.value = String(pcBox);
+  const q = $('#pc-search').value.trim().toLowerCase();
+  const box = boxes[pcBox];
+  $('#pc-grid').innerHTML = box ? box.slots.map((m, i) => pkCell(m, { type: 'pc', box: pcBox, slot: i }, q)).join('') : '';
+  $('#pc-party').innerHTML = (pc.party || []).map((m, i) => pkCell(m, { type: 'party', slot: i }, q)).join('');
+  const sm = $('#pc-sortmode');
+  if (!sm.childElementCount && pc.sortModes) sm.innerHTML = pc.sortModes.map(m => `<option>${m}</option>`).join('');
+  // Search results across every box.
+  const res = $('#pc-results');
+  if (q) {
+    const hits = [];
+    boxes.forEach((b, bi) => b.slots.forEach((m, si) => { if (m.id && monMatches(m, q)) hits.push({ m, bi, si }); }));
+    (pc.party || []).forEach((m, si) => { if (m.id && monMatches(m, q)) hits.push({ m, bi: -1, si }); });
+    res.innerHTML = hits.slice(0, 40).map(h => `<button data-hb="${h.bi}" data-hs="${h.si}">${h.bi < 0 ? 'Party' : 'Box ' + (h.bi + 1)} · ${esc(h.m.name)} Lv${h.m.lvl}${h.m.shiny ? ' ★' : ''}</button>`).join('') || '<span class="note">No matches</span>';
+    res.classList.remove('hidden');
+  } else res.classList.add('hidden');
+  renderPcDetail();
+}
+
+function renderPcDetail() {
+  const m = monAt(pcSel);
+  const d = $('#pc-detail');
+  const rel = $('#pc-release');
+  if (!m) {
+    if (pcSel) pcSel = null;
+    d.innerHTML = 'Tap a Pokémon to see details. Tap one, then tap another slot to move or swap them.';
+    rel.classList.add('hidden');
+    return;
+  }
+  const g = m.gender === 'MALE' ? ' ♂' : m.gender === 'FEMALE' ? ' ♀' : '';
+  const ivs = Object.entries(m.ivs || {}).map(([k, v]) =>
+    `<div class="iv"><span>${STAT_LABEL[k] || k}</span><div class="bar2"><i class="${v === 31 ? 'max' : ''}" style="width:${Math.round(v / 31 * 100)}%"></i></div><b>${v}</b></div>`).join('');
+  d.innerHTML = `<h2>${esc(m.name)}${m.shiny ? ' ★' : ''}${g}</h2>
+    <div>${esc(m.species)} #${m.dex} · Lv ${m.lvl} · ${m.hp}/${m.maxHp} HP</div>
+    <div style="margin:6px 0">${(m.types || []).map(t => `<span class="pill">${esc(t)}</span>`).join('')}</div>
+    <div>Nature: <b>${esc(m.nature)}</b> · Ability: <b>${esc(m.ability)}</b></div>
+    ${m.held ? `<div>Holding ${esc(m.held)}</div>` : ''}
+    <h3>IVs (${m.ivTotal}/186)</h3>${ivs}
+    <h3>Moves</h3><div>${(m.moves || []).map(esc).join(' · ') || '—'}</div>`;
+  rel.classList.toggle('hidden', !pc.open && pcSel.type === 'pc');
+  rel.classList.remove('armed');
+  rel.textContent = 'Release';
+}
+
+async function pcAct(body) {
+  await act(Object.assign({ kind: 'pc' }, body));
+  pcSig = '';
+  setTimeout(loadPc, 250);
+}
+
+function pcTap(el) {
+  const ref = { type: el.dataset.type, slot: Number(el.dataset.slot) };
+  if (ref.type === 'pc') ref.box = Number(el.dataset.box);
+  const m = monAt(ref);
+  if (!pcSel) {
+    if (m) { pcSel = ref; renderPc(); }
+    return;
+  }
+  if (sameRef(pcSel, ref)) { pcSel = null; renderPc(); return; }
+  const from = pcSel;
+  pcSel = null;
+  pcAct({ op: 'move', from, to: ref });
+}
+$('#pc-grid').addEventListener('click', e => { const el = e.target.closest('.pk'); if (el) pcTap(el); });
+$('#pc-party').addEventListener('click', e => { const el = e.target.closest('.pk'); if (el) pcTap(el); });
+$('#pc-prev').addEventListener('click', () => { if (pc && pc.boxes) { pcBox = (pcBox - 1 + pc.boxes.length) % pc.boxes.length; store.set('pcBox', pcBox); renderPc(); } });
+$('#pc-next').addEventListener('click', () => { if (pc && pc.boxes) { pcBox = (pcBox + 1) % pc.boxes.length; store.set('pcBox', pcBox); renderPc(); } });
+$('#pc-box').addEventListener('change', e => { pcBox = Number(e.target.value); store.set('pcBox', pcBox); renderPc(); });
+$('#pc-search').addEventListener('input', () => renderPc());
+$('#pc-results').addEventListener('click', e => {
+  const b = e.target.closest('button');
+  if (!b) return;
+  const bi = Number(b.dataset.hb), si = Number(b.dataset.hs);
+  pcSel = bi < 0 ? { type: 'party', slot: si } : { type: 'pc', box: bi, slot: si };
+  if (bi >= 0) { pcBox = bi; store.set('pcBox', pcBox); }
+  renderPc();
+});
+$('#pc-sort').addEventListener('click', () => pcAct({ op: 'sort', box: pcBox, mode: $('#pc-sortmode').value }));
+let releaseTimer;
+$('#pc-release').addEventListener('click', e => {
+  const b = e.currentTarget;
+  const m = monAt(pcSel);
+  if (!m) return;
+  if (!b.classList.contains('armed')) {
+    // Two taps: the first arms the button for 3 seconds.
+    b.classList.add('armed');
+    b.textContent = `Tap again to release ${m.name} forever`;
+    clearTimeout(releaseTimer);
+    releaseTimer = setTimeout(() => { b.classList.remove('armed'); b.textContent = 'Release'; }, 3000);
+    return;
+  }
+  clearTimeout(releaseTimer);
+  const at = pcSel;
+  pcSel = null;
+  pcAct({ op: 'release', at, id: m.id });
+});
+pcLoop();
 
 // ---------- chat ----------
 let quick = store.get('quick', []);

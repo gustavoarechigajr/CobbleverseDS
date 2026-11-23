@@ -17,6 +17,7 @@ becomes a touch panel for the things a controller is bad at.
 | Craft | Search recipes for the open grid (2×2 anywhere, 3×3 at a crafting table), see the ingredients, then Craft 1 or Max. Ingredients are placed with normal clicks, so it works even though Cobbleverse never unlocks recipe-book entries. |
 | Keys | Every keybind from every mod, grouped by mod, plus a favourites row. Tap to press. |
 | Party | Cobblemon party with HP, level, status, types and held item. Tap to select, and a button to send out or recall. |
+| PC | Cobblemon PC: browse every box with real model icons, see the party alongside, tap one Pokémon then another slot to move or swap (box↔box, box↔party, party↔party), sort a box, search all boxes (name, type, nature, ability, "shiny"), and view nature, ability, IVs and moves. Release needs two taps and is checked against the exact Pokémon you saw. Changes need the PC open in game (the server only accepts PC actions then); otherwise you browse the last-opened copy. |
 | Chat | Chat and commands with the Android keyboard, plus saved one-tap commands (☆ saves, long-press removes). |
 
 The status bar shows coordinates, biome, day and time, weather, whether you can sleep, health, food and level.

@@ -6,3 +6,4 @@ android/build/
 *.apk
 *.keystore
 tests/__pycache__/
+mod/devmods/

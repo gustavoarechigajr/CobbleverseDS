@@ -472,6 +472,99 @@ def party_panel(env):
     assert "key.cobblemon.throwpartypokemon" in keys
 
 
+def pcs(sig=""):
+    return http("/api/pc?sig=" + sig)
+
+
+def wait_pc(pred, timeout=6, what="pc state"):
+    deadline = time.time() + timeout
+    while True:
+        p = pcs()
+        try:
+            if pred(p):
+                return p
+        except (KeyError, IndexError, TypeError):
+            pass
+        if time.time() > deadline:
+            raise AssertionError(f"timed out waiting for {what}")
+        time.sleep(0.4)
+
+
+def names(slots):
+    return [m.get("species") for m in slots]
+
+
+@test
+def pc_boxes_moves_release_sort(env):
+    """Cobblemon only: PC contents, moves between PC and party, release safety, sort."""
+    env.reset()
+    if "party" not in state():
+        print("  (skipped: Cobblemon not loaded)")
+        return
+    env.cmd("execute as @a run clearparty @s")
+    env.cmd("execute as @a run clearpc @s")
+    mons = ["pikachu", "bulbasaur", "charmander", "squirtle", "eevee", "magikarp", "zubat", "abra"]
+    for m in mons:
+        env.cmd(f"execute as @a run pokegive @s {m} level=10")
+    env.cmd("execute as @a run pc")
+    wait_for(lambda s: s["screen"]["kind"] == "pc", 6, "PC screen")
+    p = wait_pc(lambda p: p["open"] and sum(1 for m in p["boxes"][0]["slots"] if m.get("id")) == 2, what="2 Pokémon in box 1")
+    assert len(p["party"]) == 6 and all(m.get("id") for m in p["party"]), names(p["party"])
+    assert len(p["boxes"][0]["slots"]) == 30 and p["sortModes"]
+    box0 = [m for m in p["boxes"][0]["slots"] if m.get("id")]
+    assert {m["species"].lower() for m in box0} == {"zubat", "abra"}, names(box0)
+    m0 = next(m for m in p["party"] if m.get("k"))
+    png = http("/api/icon/" + urllib.request.quote(m0["k"], safe=""), timeout=10)
+    assert png[:4] == b"\x89PNG" and len(png) > 500, "Pokémon model icon missing or blank"
+    assert set(m0["ivs"]) == {"HP", "ATTACK", "DEFENCE", "SPECIAL_ATTACK", "SPECIAL_DEFENCE", "SPEED"} and m0["moves"], m0
+
+    def ref_of(p, species):
+        for bi, b in enumerate(p["boxes"]):
+            for si, m in enumerate(b["slots"]):
+                if m.get("species", "").lower() == species:
+                    return {"type": "pc", "box": bi, "slot": si}
+        for si, m in enumerate(p["party"]):
+            if m.get("species", "").lower() == species:
+                return {"type": "party", "slot": si}
+        raise AssertionError(species + " not found")
+
+    # PC -> empty PC slot in another box
+    assert action(kind="pc", op="move", **{"from": ref_of(p, "zubat")}, to={"type": "pc", "box": 1, "slot": 5})["ok"]
+    p = wait_pc(lambda p: p["boxes"][1]["slots"][5].get("species", "").lower() == "zubat", what="zubat in box 2")
+    # PC <-> party swap
+    party0 = p["party"][0]["species"].lower()
+    assert action(kind="pc", op="move", **{"from": {"type": "pc", "box": 1, "slot": 5}}, to={"type": "party", "slot": 0})["ok"]
+    p = wait_pc(lambda p: p["party"][0]["species"].lower() == "zubat" and p["boxes"][1]["slots"][5].get("species", "").lower() == party0, what="pc/party swap")
+    # party <-> party swap
+    a, b = p["party"][1]["species"], p["party"][2]["species"]
+    assert action(kind="pc", op="move", **{"from": {"type": "party", "slot": 1}}, to={"type": "party", "slot": 2})["ok"]
+    p = wait_pc(lambda p: p["party"][1]["species"] == b and p["party"][2]["species"] == a, what="party swap")
+    # release needs the exact Pokémon id
+    abra = ref_of(p, "abra")
+    bad = action(kind="pc", op="release", at=abra, id="00000000-0000-0000-0000-000000000000")
+    assert bad["ok"] is False, bad
+    abra_id = p["boxes"][abra["box"]]["slots"][abra["slot"]]["id"]
+    total = lambda p: sum(1 for b in p["boxes"] for m in b["slots"] if m.get("id")) + sum(1 for m in p["party"] if m.get("id"))
+    before = total(p)
+    assert action(kind="pc", op="release", at=abra, id=abra_id)["ok"]
+    p = wait_pc(lambda p: total(p) == before - 1, what="release")
+    assert all(m.get("id") != abra_id for b in p["boxes"] for m in b["slots"])
+    # sort box 1 by name
+    for m in ["vulpix", "growlithe", "ponyta"]:
+        env.cmd(f"execute as @a run pokegive @s {m} level=5")
+    p = wait_pc(lambda p: sum(1 for m in p["boxes"][0]["slots"] if m.get("id")) >= 3, what="3 in box 1")
+    assert action(kind="pc", op="sort", box=0, mode="NAME")["ok"]
+    p = wait_pc(lambda p: [m["name"] for m in p["boxes"][0]["slots"] if m.get("id")] == sorted(m["name"] for m in p["boxes"][0]["slots"] if m.get("id"))
+                and p["boxes"][0]["slots"][0].get("id"), what="sorted box")
+    # unchanged state is not resent
+    assert pcs(p["sig"]).get("same") is True
+    # actions need an open PC
+    debug(op="closeScreen")
+    wait_for(lambda s: s["screen"]["kind"] != "pc", 4, "PC closed")
+    r = action(kind="pc", op="move", **{"from": {"type": "pc", "box": 0, "slot": 0}}, to={"type": "pc", "box": 2, "slot": 0})
+    assert r["ok"] is False and "PC" in r["error"], r
+
+
 @test
 def stress_rapid_actions(env):
     """Spam moves like an impatient player; nothing may be lost or left on the cursor."""

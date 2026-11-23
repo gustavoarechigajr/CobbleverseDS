@@ -76,3 +76,26 @@ details .keys { padding: 4px 0 10px; }
 #shade { position: fixed; inset: -20px; background: #000; display: none; z-index: 100; }
 #shade.on { display: block; }
 #st-side { cursor: pointer; }
+select { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: 10px; padding: 8px 12px; min-height: 56px; }
+button.nav { min-width: 72px; font-size: 26px; }
+button.danger { background: #5a2323; border-color: var(--bad); }
+button.danger.armed { background: var(--bad); }
+#pc-main { flex: 1; display: flex; gap: 10px; min-height: 0; }
+#pc-grid { display: grid; grid-template-columns: repeat(6, 104px); grid-auto-rows: 104px; gap: 6px; align-content: start; }
+#pc-party { display: grid; grid-template-columns: 104px; grid-auto-rows: 104px; gap: 6px; align-content: start; padding-left: 10px; border-left: 2px solid var(--line); }
+.pk { position: relative; background: var(--slot); border: 2px solid #11131a; border-radius: 10px; overflow: hidden; }
+.pk.party { background: var(--slotc); }
+.pk img { position: absolute; inset: 4px 4px 18px; width: calc(100% - 8px); height: calc(100% - 22px); object-fit: contain; image-rendering: pixelated; pointer-events: none; }
+.pk .lv { position: absolute; left: 6px; top: 2px; font-size: 15px; color: var(--dim); pointer-events: none; }
+.pk .shiny { position: absolute; right: 5px; top: 1px; color: var(--accent); pointer-events: none; }
+.pk .nm { position: absolute; left: 2px; right: 2px; bottom: 1px; font-size: 14px; text-align: center; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; pointer-events: none; }
+.pk.sel { border-color: var(--sel); box-shadow: inset 0 0 0 3px var(--sel); }
+.pk.hit { border-color: var(--good); box-shadow: inset 0 0 0 3px var(--good); }
+.pk.miss { opacity: .3; }
+.pk.faint img { filter: grayscale(1); }
+#pc-detail { flex: 1; min-width: 0; overflow: auto; background: var(--panel); border-radius: 12px; padding: 12px; font-size: 18px; }
+#pc-detail h2 { margin: 0 0 4px; font-size: 26px; }
+.iv { display: grid; grid-template-columns: 60px 1fr 34px; gap: 6px; align-items: center; margin: 3px 0; }
+.iv .bar2 { height: 10px; background: #000; border-radius: 5px; overflow: hidden; }
+.iv .bar2 i { display: block; height: 100%; background: var(--sel); }
+.iv .bar2 i.max { background: var(--good); }
