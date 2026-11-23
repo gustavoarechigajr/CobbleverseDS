@@ -4,7 +4,7 @@
     python3 -I tests/mock_server.py [--port 25611] [--scene chest|terminal|craft|none] [--battle]
 Item icons come from Minecraft's own item textures (from the Gradle cache), when available.
 """
-import argparse, glob, io, json, os, time, zipfile
+import argparse, glob, io, json, os, threading, time, zipfile
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlparse, parse_qs, unquote
 
@@ -18,6 +18,7 @@ args = ap.parse_args()
 jars = glob.glob(os.path.expanduser("~/.gradle/caches/fabric-loom/minecraftMaven/**/minecraft-client*.jar"), recursive=True) + \
        glob.glob(os.path.expanduser("~/Projects/cobbleverse-ds/mod/.gradle/loom-cache/minecraftMaven/**/*.jar"), recursive=True)
 textures = None
+TEX_LOCK = threading.Lock()  # ZipFile isn't safe to read from several threads
 for j in jars:
     try:
         z = zipfile.ZipFile(j)
@@ -146,8 +147,10 @@ class H(BaseHTTPRequestHandler):
             key = unquote(p[len("/api/icon/"):])
             if textures and key.startswith("minecraft:"):
                 name = f"assets/minecraft/textures/item/{key.split(':')[1]}.png"
-                if name in textures.namelist():
-                    return self.send(200, textures.read(name), "image/png")
+                with TEX_LOCK:
+                    data = textures.read(name) if name in textures.namelist() else None
+                if data:
+                    return self.send(200, data, "image/png")
             return self.send(404, b"no", "text/plain")
         if p == "/api/pc": return self.send(200, pc())
         if p == "/api/battle": return self.send(200, battle() if args.battle else {"active": False})

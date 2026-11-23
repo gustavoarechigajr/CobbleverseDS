@@ -28,7 +28,7 @@
 }
 
 * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
-html, body { margin: 0; height: 100%; overflow: hidden; user-select: none; -webkit-user-select: none; }
+html, body { margin: 0; height: 100%; overflow: hidden; user-select: none; -webkit-user-select: none; touch-action: manipulation; /* no double-tap zoom */ }
 body {
   background: linear-gradient(180deg, var(--dex-hi) 0, var(--dex) 90px, var(--dex) 100%);
   color: var(--text);
@@ -129,10 +129,20 @@ h3 small { font: 600 15px var(--round); color: var(--dim); }
 .slot.miss { opacity: .3; }
 .slot.hb::before { content: ''; position: absolute; inset: 3px; border: 2px dashed var(--yellow); border-radius: 4px; pointer-events: none; }
 .slot:active { filter: brightness(1.35); }
-#selbar { background: var(--screen-deep); border-radius: 12px; padding: 8px; }
+/* The selection and hotbar bars float over the bottom of the screen: if they took layout space,
+   selecting an item would shrink and re-scale the whole grid (it looked like zooming). */
+#tab-storage { position: relative; }
+#selbar, #hotbarbar {
+  position: absolute; left: 14px; right: 14px; top: 10px; min-height: 126px; z-index: 5; align-content: center;
+  background: var(--screen-deep); border: 3px solid var(--ink); border-radius: 14px; padding: 10px;
+  box-shadow: 0 -6px 18px rgba(0, 0, 0, .45);
+}
+#hotbarbar .cancel { margin-left: auto; }
 #sel-name { font: 600 22px/1 var(--pixel); color: var(--yellow); margin: 0 8px; }
 #hotbarbar span { font: 600 20px var(--pixel); margin-right: 4px; }
-#hotbarbar button { min-width: 62px; font: 600 24px/1 var(--pixel); }
+#hb-name { color: var(--yellow); }
+#hotbarbar button { min-width: 54px; padding: 8px 10px; font: 600 24px/1 var(--pixel); }
+#hotbarbar button.cancel { font: 700 20px/1.1 var(--round); }
 
 /* storage network (Tom's) */
 #net { flex: 0 1 auto; max-height: 46%; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
@@ -252,3 +262,12 @@ details .keys { padding: 4px 0 12px; }
 #shade.on { display: block; }
 
 @media (prefers-reduced-motion: reduce) { button:active { transform: none; } }
+
+/* drag and drop */
+.ghost { position: fixed; left: 0; top: 0; width: 88px; height: 88px; z-index: 60; pointer-events: none;
+  background: rgba(59, 62, 68, .85); border: 3px solid var(--yellow); border-radius: 10px; box-shadow: 0 10px 24px rgba(0, 0, 0, .5); }
+.ghost img { width: 100%; height: 100%; image-rendering: pixelated; padding: 8px; box-sizing: border-box; }
+.ghost span { display: block; padding: 8px; font: 800 14px var(--round); color: var(--text); }
+.slot.dragging, .pk.dragging { opacity: .35; }
+.slot.drop, .pk.drop { box-shadow: inset 0 0 0 4px var(--blue-hi), 0 0 0 2px var(--ink); z-index: 2; }
+#pc-main { touch-action: none; } /* the finger drags Pokémon, it doesn't scroll the page */

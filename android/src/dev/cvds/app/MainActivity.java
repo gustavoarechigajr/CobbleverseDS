@@ -49,6 +49,8 @@ public class MainActivity extends Activity {
 		s.setUseWideViewPort(true);
 		s.setLoadWithOverviewMode(true);
 		s.setSupportZoom(false);
+		s.setBuiltInZoomControls(false);
+		s.setDisplayZoomControls(false);
 		web.setHapticFeedbackEnabled(false);
 		web.setOnLongClickListener(v -> true); // no text-selection popups on long-press
 		web.setLongClickable(false);

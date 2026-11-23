@@ -149,6 +149,8 @@ function renderGrid(force) {
   scale = Math.max(scale, 56 / 18); // never smaller than a comfortable touch target; scroll instead
   grid.style.width = Math.round(bw * scale) + 'px';
   grid.style.height = Math.round(bh * scale) + 'px';
+  // Drag in any direction when the grid fits; a tall modded container keeps vertical scrolling.
+  grid.style.touchAction = bh * scale > availH + 40 ? 'pan-y' : 'none';
 
   const q = $('#inv-search').value.trim().toLowerCase();
   const sel = state.status.hotbar;
@@ -204,8 +206,11 @@ function setSelected(i) {
   else {
     const s = slotByIndex(i);
     $('#sel-name').textContent = s && s.k ? `${itemInfo(s.k).name}${s.n > 1 ? ' ×' + s.n : ''}` : '';
-    bar.classList.remove('hidden');
+    // one bar at a time, floating over the top buttons (see app.css)
+    bar.classList.toggle('hidden', mode === 'hotbar');
     $('#hotbarbar').classList.toggle('hidden', mode !== 'hotbar');
+    const hn = $('#hb-name');
+    if (hn) hn.textContent = $('#sel-name').textContent;
   }
   $$('.slot').forEach(el => el.classList.toggle('sel', Number(el.dataset.i) === i));
 }
@@ -218,44 +223,95 @@ $$('#modes button').forEach(b => b.addEventListener('click', () => {
 
 (() => {
   const bar = $('#hotbarbar');
-  bar.innerHTML = '<span>Put in hotbar slot:</span>' + [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button data-hb="${n - 1}">${n}</button>`).join('');
+  bar.innerHTML = '<span id="hb-name"></span><span>to slot</span>' + [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => `<button data-hb="${n - 1}">${n}</button>`).join('') + '<button class="cancel">Cancel</button>';
   bar.addEventListener('click', async e => {
     const b = e.target.closest('button');
     if (!b || selected == null) return;
+    if (b.classList.contains('cancel')) { setSelected(null); return; }
     await act({ kind: 'inv', op: 'hotbar', slot: selected, hotbar: Number(b.dataset.hb), menu: state.menu.id });
     setSelected(null);
   });
 })();
 
-// Tap / long-press handling on the grid. Long-press always quick-moves (like shift-click).
-(() => {
-  const grid = $('#grid');
-  let timer = null, downSlot = null, longFired = false, startX = 0, startY = 0;
-  grid.addEventListener('pointerdown', e => {
+/**
+ * Touch gestures for a grid of items: tap, long-press, and drag-and-drop. A drag starts once the
+ * finger moves past a small threshold (so taps and long-presses still work); a picture of the item
+ * follows the finger and the slot under it lights up. Elements are found by position at the end,
+ * so the grid may be re-rendered by a state update mid-drag.
+ */
+function gestures(container, itemSel, { canDrag, onTap, onLong, onDrop }) {
+  let down = null, timer = null, ghost = null, over = null;
+  const at = (x, y) => { const el = document.elementFromPoint(x, y); return el && el.closest(itemSel); };
+  const clearOver = () => { if (over) over.classList.remove('drop'); over = null; };
+  const end = () => {
+    clearTimeout(timer); timer = null;
+    if (ghost) ghost.remove();
+    ghost = null;
+    clearOver();
+    container.querySelectorAll('.dragging').forEach(el => el.classList.remove('dragging'));
+    down = null;
+  };
+  container.addEventListener('pointerdown', e => {
     if (e.isPrimary === false) return;
-    const el = e.target.closest('.slot');
+    const el = e.target.closest(itemSel);
     if (!el) return;
-    downSlot = Number(el.dataset.i);
-    longFired = false;
-    startX = e.clientX; startY = e.clientY;
+    down = { el, x: e.clientX, y: e.clientY, long: false, dragging: false };
+    try { container.setPointerCapture(e.pointerId); } catch {}
     timer = setTimeout(() => {
-      longFired = true;
+      if (!down || down.dragging) return;
+      down.long = true;
       if (navigator.vibrate) navigator.vibrate(30);
-      const s = slotByIndex(downSlot);
-      if (s && s.k) act({ kind: 'inv', op: 'quick', slot: downSlot, menu: state.menu.id });
-      setSelected(null);
+      onLong && onLong(down.el);
     }, 450);
   });
-  const cancel = () => { clearTimeout(timer); timer = null; };
-  grid.addEventListener('pointermove', e => { if (Math.hypot(e.clientX - startX, e.clientY - startY) > 20) cancel(); });
-  grid.addEventListener('pointercancel', cancel);
-  grid.addEventListener('pointerup', e => {
-    const wasTimer = timer != null;
-    cancel();
-    if (longFired || !wasTimer || downSlot == null) return;
-    tapSlot(downSlot);
+  container.addEventListener('pointermove', e => {
+    if (!down || down.long) return;
+    if (!down.dragging) {
+      if (Math.hypot(e.clientX - down.x, e.clientY - down.y) < 12) return;
+      clearTimeout(timer); timer = null;
+      if (!canDrag(down.el)) { down.cancelled = true; return; }
+      down.dragging = true;
+      down.el.classList.add('dragging');
+      ghost = document.createElement('div');
+      ghost.className = 'ghost';
+      const img = down.el.querySelector('img');
+      ghost.innerHTML = img ? `<img src="${img.src}" alt="">` : `<span>${esc((down.el.textContent || '').trim().slice(0, 12))}</span>`;
+      document.body.appendChild(ghost);
+    }
+    ghost.style.transform = `translate(${e.clientX - 44}px, ${e.clientY - 44}px)`;
+    const t = at(e.clientX, e.clientY);
+    if (t !== over) { clearOver(); if (t && t !== down.el) { over = t; t.classList.add('drop'); } }
   });
-})();
+  container.addEventListener('pointerup', e => {
+    if (!down) return;
+    const d = down;
+    if (d.dragging) {
+      const t = at(e.clientX, e.clientY);
+      end();
+      if (t && t !== d.el) onDrop(d.el, t);
+      return;
+    }
+    end();
+    if (!d.long && !d.cancelled) onTap(d.el);
+  });
+  container.addEventListener('pointercancel', end);
+}
+
+// Storage grid: tap-tap or drag to move, long-press to quick-move (like shift-click).
+gestures($('#grid'), '.slot', {
+  canDrag: el => !!(slotByIndex(Number(el.dataset.i)) || {}).k,
+  onTap: el => tapSlot(Number(el.dataset.i)),
+  onLong: el => {
+    const s = slotByIndex(Number(el.dataset.i));
+    if (s && s.k) act({ kind: 'inv', op: 'quick', slot: s.i, menu: state.menu.id });
+    setSelected(null);
+  },
+  onDrop: (from, to) => {
+    const amount = mode === 'half' ? 'half' : mode === 'one' ? 'one' : 'all';
+    setSelected(null);
+    act({ kind: 'inv', op: 'move', from: Number(from.dataset.i), to: Number(to.dataset.i), amount, menu: state.menu.id });
+  },
+});
 
 function tapSlot(i) {
   const s = slotByIndex(i);
@@ -598,7 +654,7 @@ function renderPcDetail() {
     `<div class="iv"><span>${STAT_LABEL[k] || k}</span><div class="bar2"><i class="${v === 31 ? 'max' : ''}" style="width:${Math.round(v / 31 * 100)}%"></i></div><b>${v}</b></div>`).join('');
   d.innerHTML = `<h2>${esc(m.name)}${m.shiny ? ' ★' : ''}${g}</h2>
     <div>${esc(m.species)} #${m.dex} · Lv ${m.lvl} · ${m.hp}/${m.maxHp} HP</div>
-    <div style="margin:6px 0">${(m.types || []).map(t => `<span class="pill">${esc(t)}</span>`).join('')}</div>
+    <div style="margin:6px 0">${typePills(m.types)}</div>
     <div>Nature: <b>${esc(m.nature)}</b> · Ability: <b>${esc(m.ability)}</b></div>
     ${m.held ? `<div>Holding ${esc(m.held)}</div>` : ''}
     <h3>IVs (${m.ivTotal}/186)</h3>${ivs}
@@ -626,8 +682,16 @@ function pcTap(el) {
   pcSel = null;
   pcAct({ op: 'move', from, to: ref });
 }
-$('#pc-grid').addEventListener('click', e => { const el = e.target.closest('.pk'); if (el) pcTap(el); });
-$('#pc-party').addEventListener('click', e => { const el = e.target.closest('.pk'); if (el) pcTap(el); });
+function pcRef(el) {
+  const ref = { type: el.dataset.type, slot: Number(el.dataset.slot) };
+  if (ref.type === 'pc') ref.box = Number(el.dataset.box);
+  return ref;
+}
+gestures($('#pc-main'), '.pk', {
+  canDrag: el => !!monAt(pcRef(el)),
+  onTap: el => pcTap(el),
+  onDrop: (from, to) => { pcSel = null; pcAct({ op: 'move', from: pcRef(from), to: pcRef(to) }); },
+});
 $('#pc-prev').addEventListener('click', () => { if (pc && pc.boxes) { pcBox = (pcBox - 1 + pc.boxes.length) % pc.boxes.length; store.set('pcBox', pcBox); renderPc(); } });
 $('#pc-next').addEventListener('click', () => { if (pc && pc.boxes) { pcBox = (pcBox + 1) % pc.boxes.length; store.set('pcBox', pcBox); renderPc(); } });
 $('#pc-box').addEventListener('change', e => { pcBox = Number(e.target.value); store.set('pcBox', pcBox); renderPc(); });

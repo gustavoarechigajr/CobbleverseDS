@@ -88,11 +88,29 @@ const activeTab = () => ($('#tabs button.on') || {}).dataset?.tab;
 
   // tap diamond, then an inventory slot -> move action
   const tap = (el) => { el.dispatchEvent(new w.MouseEvent('pointerdown', { bubbles: true, clientX: 1, clientY: 1 })); el.dispatchEvent(new w.MouseEvent('pointerup', { bubbles: true, clientX: 1, clientY: 1 })); };
+  const sizeBefore = $('#grid .slot').style.width;
   tap($('#grid .slot[data-i="0"]'));
+  await sleep(50);
+  check($('#grid .slot').style.width === sizeBefore && !$('#selbar').classList.contains('hidden'), 'selecting an item does not resize the grid (no "zoom" jump)');
   tap($('#grid .slot[data-i="30"]'));
   await sleep(50);
   const mv = actions.find(a => a.op === 'move');
   check(mv && mv.from === 0 && mv.to === 30 && mv.amount === 'all' && mv.menu === 3, 'tap-tap sends a move with the menu id');
+
+  // drag and drop (jsdom has no layout: point elementFromPoint at the drop target)
+  {
+    const src = $('#grid .slot[data-i="0"]'), dst = $('#grid .slot[data-i="31"]');
+    const n = actions.length;
+    w.document.elementFromPoint = () => dst;
+    const pe = (t, el, x) => el.dispatchEvent(new w.MouseEvent(t, { bubbles: true, clientX: x, clientY: 0 }));
+    pe('pointerdown', src, 0); pe('pointermove', $('#grid'), 40); pe('pointermove', $('#grid'), 80);
+    check(!!w.document.querySelector('.ghost'), 'dragging shows the item under the finger');
+    pe('pointerup', $('#grid'), 80);
+    await sleep(50);
+    const d = actions.slice(n).find(a => a.op === 'move');
+    check(d && d.from === 0 && d.to === 31 && !w.document.querySelector('.ghost'), 'dropping on a slot moves the stack there');
+    w.document.elementFromPoint = () => null;
+  }
 
   // a selection must not carry over into another container
   tap($('#grid .slot[data-i="0"]'));
