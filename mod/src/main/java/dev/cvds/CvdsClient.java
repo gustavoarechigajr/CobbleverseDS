@@ -20,6 +20,7 @@ public final class CvdsClient implements ClientModInitializer {
 			Keys.tick();
 			Snapshot.tick(mc);
 			Icons.tick(mc);
+			if (config.debug) Debug.tick(mc);
 		});
 		try {
 			server = new MiniHttpServer(InetAddress.getLoopbackAddress(), config.port, new Api());

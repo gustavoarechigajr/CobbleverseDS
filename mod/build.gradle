@@ -29,7 +29,6 @@ loom {
 		client {
 			// Debug endpoints (give items, run commands, open worlds) for the integration tests.
 			vmArg '-Dcvds.debug=true'
-			programArgs '--quickPlaySingleplayer', 'cvds-test'
 		}
 	}
 }

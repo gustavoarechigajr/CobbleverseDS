@@ -2,7 +2,6 @@ package dev.cvds.feature;
 
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
-import dev.cvds.inv.Planner;
 import java.util.*;
 import net.minecraft.client.Minecraft;
 import net.minecraft.core.NonNullList;
@@ -50,6 +49,14 @@ public final class Crafting {
 			o.addProperty("name", name);
 			o.addProperty("can", can);
 			o.addProperty("book", mc.player.getRecipeBook().contains(h));
+			Map<String, Integer> need = new LinkedHashMap<>();
+			for (Ingredient ing : r.getIngredients()) {
+				ItemStack[] opts = ing.getItems();
+				if (opts.length > 0) need.merge(opts[0].getHoverName().getString() + (opts.length > 1 ? " (any)" : ""), 1, Integer::sum);
+			}
+			JsonArray ingsJson = new JsonArray();
+			need.forEach((n, c) -> ingsJson.add(c + "× " + n));
+			o.add("ings", ingsJson);
 			String dedupe = o.get("k").getAsString() + can;
 			if (!seenOutputs.add(dedupe + h.id())) continue;
 			(can ? craftable : other).add(o);
@@ -72,21 +79,22 @@ public final class Crafting {
 		var holder = mc.level.getRecipeManager().byKey(ResourceLocation.parse(id)).orElse(null);
 		if (holder == null || !(holder.value() instanceof CraftingRecipe recipe)) return Api.error("unknown recipe " + id);
 		MenuInv inv = new MenuInv(mc);
-		int result = rb.getResultSlotIndex();
 		clearGrid(inv);
-		if (mc.player.getRecipeBook().contains(holder)) {
-			// Server-side placement, same packet as the vanilla recipe book. The result click that
-			// follows is processed after it on the server, so it crafts what was placed.
-			mc.gameMode.handlePlaceRecipe(inv.menu.containerId, holder, max);
-		} else {
-			int sets = max ? 64 : 1;
-			int placed = 0;
-			while (placed < sets && placeOnce(inv, rb, recipe)) placed++;
-			if (placed == 0) return Api.error("missing ingredients");
+		// Ingredients are placed with ordinary clicks rather than the recipe-book packet: servers
+		// ignore that packet for recipes the player hasn't unlocked, and Cobbleverse never unlocks them.
+		List<int[]> plan = plan(inv, rb, recipe);
+		if (plan == null) return Api.error("this recipe doesn't fit the grid");
+		int sets = max ? maxSets(inv, recipe, plan) : (feasible(inv, recipe, plan, 1) ? 1 : 0);
+		if (sets == 0) return Api.error("missing ingredients");
+		if (!place(inv, recipe, plan, sets)) {
+			clearGrid(inv);
+			return Api.error("could not place ingredients");
 		}
-		inv.click(result, 0, ClickType.QUICK_MOVE);
+		inv.click(rb.getResultSlotIndex(), 0, ClickType.QUICK_MOVE);
 		if (inv.carrying()) InvOps.clearCursor(inv);
-		return Api.ok();
+		JsonObject r = Api.ok();
+		r.addProperty("sets", sets);
+		return r;
 	}
 
 	static List<Integer> gridSlots(MenuInv inv) {
@@ -99,34 +107,77 @@ public final class Crafting {
 		for (int s : gridSlots(inv)) if (!inv.empty(s)) inv.click(s, 0, ClickType.QUICK_MOVE);
 	}
 
-	/** Puts one set of ingredients into the grid using normal clicks. False if something is missing. */
-	static boolean placeOnce(MenuInv inv, RecipeBookMenu<?, ?> rb, CraftingRecipe r) {
+	/** [gridSlot, ingredientIndex] for every non-empty ingredient, or null if it doesn't fit. */
+	static List<int[]> plan(MenuInv inv, RecipeBookMenu<?, ?> rb, CraftingRecipe r) {
 		List<Integer> grid = gridSlots(inv);
 		int gw = rb.getGridWidth();
 		NonNullList<Ingredient> ings = r.getIngredients();
 		int w = r instanceof ShapedRecipe sr ? sr.getWidth() : gw;
-		List<int[]> plan = new ArrayList<>(); // [gridSlot, ingredientIndex]
+		List<int[]> plan = new ArrayList<>();
 		for (int i = 0; i < ings.size(); i++) {
 			if (ings.get(i).isEmpty()) continue;
-			int gx = i % w, gy = i / w;
-			int idx = gy * gw + gx;
-			if (idx >= grid.size()) return false;
+			int idx = (i / w) * gw + (i % w);
+			if (i % w >= gw || idx >= grid.size()) return null;
 			plan.add(new int[]{grid.get(idx), i});
 		}
-		// Check availability first so a partial set is never left in the grid.
+		return plan;
+	}
+
+	/**
+	 * Picks inventory sources for {@code sets} copies of every ingredient, or null if short.
+	 * Each entry: [gridSlot, sourceSlot, count].
+	 */
+	static List<int[]> allocate(MenuInv inv, CraftingRecipe r, List<int[]> plan, int sets) {
 		Map<Integer, Integer> used = new HashMap<>();
 		List<int[]> moves = new ArrayList<>();
 		for (int[] p : plan) {
-			int src = -1;
+			Ingredient ing = r.getIngredients().get(p[1]);
+			int need = sets;
 			for (int s : InvOps.groupSlots(inv, "pc", null)) {
-				int left = inv.count(s) - used.getOrDefault(s, 0);
-				if (left > 0 && ings.get(p[1]).test(inv.stack(s))) { src = s; break; }
+				if (need == 0) break;
+				ItemStack st = inv.stack(s);
+				int left = st.getCount() - used.getOrDefault(s, 0);
+				if (left <= 0 || !ing.test(st)) continue;
+				if (sets > st.getMaxStackSize()) return null; // the grid slot couldn't hold that many
+				int take = Math.min(left, need);
+				used.merge(s, take, Integer::sum);
+				moves.add(new int[]{p[0], s, take});
+				need -= take;
 			}
-			if (src < 0) return false;
-			used.merge(src, 1, Integer::sum);
-			moves.add(new int[]{src, p[0]});
+			if (need > 0) return null;
 		}
-		for (int[] m : moves) Planner.move(inv, m[0], m[1], Planner.Amount.ONE);
+		return moves;
+	}
+
+	static boolean feasible(MenuInv inv, CraftingRecipe r, List<int[]> plan, int sets) {
+		return allocate(inv, r, plan, sets) != null;
+	}
+
+	static int maxSets(MenuInv inv, CraftingRecipe r, List<int[]> plan) {
+		int lo = 0, hi = 64;
+		while (lo < hi) { // largest feasible count; feasibility is monotonic
+			int mid = (lo + hi + 1) / 2;
+			if (feasible(inv, r, plan, mid)) lo = mid; else hi = mid - 1;
+		}
+		return lo;
+	}
+
+	/** Moves the allocated ingredients into the grid with as few clicks as possible. */
+	static boolean place(MenuInv inv, CraftingRecipe r, List<int[]> plan, int sets) {
+		List<int[]> moves = allocate(inv, r, plan, sets);
+		if (moves == null) return false;
+		for (int[] m : moves) {
+			int grid = m[0], src = m[1], count = m[2];
+			if (inv.count(src) <= count) {
+				inv.pickup(src, 0);
+				inv.pickup(grid, 0);
+			} else {
+				inv.pickup(src, 0);
+				for (int i = 0; i < count; i++) inv.pickup(grid, 1);
+			}
+			if (inv.carrying()) inv.pickup(src, 0);
+			if (inv.carrying()) return false;
+		}
 		return true;
 	}
 }

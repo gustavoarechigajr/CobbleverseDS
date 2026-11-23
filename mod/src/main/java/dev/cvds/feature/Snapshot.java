@@ -161,7 +161,8 @@ public final class Snapshot {
 		});
 		long day = mc.level.getDayTime();
 		s.addProperty("day", day / 24000L);
-		s.addProperty("time", Math.floorMod(day, 24000L));
+		// Rounded to whole in-game minutes so the state isn't "new" every tick.
+		s.addProperty("time", Math.floorMod(day, 24000L) / 50 * 50);
 		s.addProperty("rain", mc.level.isRaining());
 		s.addProperty("thunder", mc.level.isThundering());
 		long t = Math.floorMod(day, 24000L);

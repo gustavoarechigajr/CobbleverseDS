@@ -1,1 +1,73 @@
-<!doctype html><title>cvds</title>
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=1240, user-scalable=no">
+<title>Cobbleverse DS</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header id="status"><span id="st-main">Waiting for the game…</span><span id="st-side"></span></header>
+<div id="app">
+  <nav id="tabs">
+    <button data-tab="storage" class="on">Storage</button>
+    <button data-tab="craft">Craft</button>
+    <button data-tab="keys">Keys</button>
+    <button data-tab="party">Party</button>
+    <button data-tab="chat">Chat</button>
+  </nav>
+  <main>
+    <section id="tab-storage" class="tab on">
+      <div class="bar">
+        <div class="seg" id="modes">
+          <button data-mode="move" class="on">Move</button>
+          <button data-mode="half">Half</button>
+          <button data-mode="one">One</button>
+          <button data-mode="quick">Quick</button>
+          <button data-mode="hotbar">Hotbar</button>
+        </div>
+        <input id="inv-search" type="search" placeholder="Find item" autocomplete="off">
+      </div>
+      <div class="bar" id="bulk">
+        <button data-bulk="take">Take all</button>
+        <button data-bulk="store">Store all</button>
+        <button data-bulk="matching">Store matching</button>
+        <button data-bulk="sortc">Sort container</button>
+        <button data-bulk="sortp">Sort inventory</button>
+      </div>
+      <div class="bar hidden" id="selbar">
+        <span id="sel-name"></span>
+        <button data-sel="all-like">Move all like this</button>
+        <button data-sel="drop1">Drop 1</button>
+        <button data-sel="drop">Drop stack</button>
+        <button data-sel="cancel">Cancel</button>
+      </div>
+      <div class="bar hidden" id="hotbarbar"></div>
+      <div id="grid-wrap"><div id="screen-title"></div><div id="grid"></div></div>
+    </section>
+    <section id="tab-craft" class="tab">
+      <div class="bar"><input id="craft-search" type="search" placeholder="Search recipes (empty = what you can make now)" autocomplete="off"></div>
+      <div id="craft-note" class="note"></div>
+      <div id="recipes" class="cards"></div>
+    </section>
+    <section id="tab-keys" class="tab">
+      <div class="bar"><input id="key-search" type="search" placeholder="Filter keybinds" autocomplete="off"><button id="key-refresh">Reload</button></div>
+      <h3>Favourites <small>(tap ☆ to add)</small></h3>
+      <div id="key-favs" class="keys"></div>
+      <div id="key-list"></div>
+    </section>
+    <section id="tab-party" class="tab">
+      <div id="party" class="party"></div>
+      <div class="bar"><button id="party-send" class="big">Send out / recall selected</button></div>
+    </section>
+    <section id="tab-chat" class="tab">
+      <div id="chat-log"></div>
+      <div id="quick-cmds" class="chips"></div>
+      <div class="bar"><input id="chat-input" type="text" placeholder="Chat or /command" autocomplete="off"><button id="chat-send" class="big">Send</button><button id="chat-save">☆</button></div>
+    </section>
+  </main>
+</div>
+<div id="toast"></div>
+<script src="app.js"></script>
+</body>
+</html>

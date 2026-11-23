@@ -8,7 +8,6 @@ import dev.cvds.CvdsClient;
 import java.util.*;
 import java.util.concurrent.*;
 import net.minecraft.client.Minecraft;
-import net.minecraft.client.Screenshot;
 import net.minecraft.client.gui.GuiGraphics;
 import net.minecraft.world.item.ItemStack;
 import org.joml.Matrix4f;
@@ -78,7 +77,11 @@ public final class Icons {
 			GuiGraphics g = new GuiGraphics(mc, mc.renderBuffers().bufferSource());
 			g.renderItem(stack, 0, 0);
 			g.flush();
-			try (NativeImage img = Screenshot.takeScreenshot(target)) {
+			// Read back with alpha (Screenshot.takeScreenshot forces it opaque).
+			try (NativeImage img = new NativeImage(SIZE, SIZE, false)) {
+				RenderSystem.bindTexture(target.getColorTextureId());
+				img.downloadTexture(0, false);
+				img.flipY();
 				return img.asByteArray();
 			}
 		} finally {
