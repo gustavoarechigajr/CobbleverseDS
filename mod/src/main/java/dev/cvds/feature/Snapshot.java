@@ -24,6 +24,8 @@ public final class Snapshot {
 	private static volatile long lastPoll = 0;
 	private static int tickCounter = 0;
 	static final boolean COBBLEMON = FabricLoader.getInstance().isModLoaded("cobblemon");
+	/** Tom's Simple Storage. Checked here so Terminal (and Tom's classes) never load without it. */
+	public static final boolean TOMS = FabricLoader.getInstance().isModLoaded("toms_storage");
 
 	public static void tick(Minecraft mc) {
 		if (++tickCounter % 2 != 0) return;
@@ -73,6 +75,7 @@ public final class Snapshot {
 		else kind = "other";
 		if (COBBLEMON && "other".equals(kind) && PcScreen.isPc(mc.screen)) kind = "pc";
 		screen.addProperty("kind", kind);
+		if (TOMS && Terminal.open(mc)) screen.addProperty("terminal", true);
 		if (mc.screen != null) {
 			screen.addProperty("cls", mc.screen.getClass().getName());
 			screen.addProperty("title", mc.screen.getTitle().getString());

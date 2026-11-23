@@ -44,6 +44,15 @@
         <button data-sel="cancel">Cancel</button>
       </div>
       <div class="bar hidden" id="hotbarbar"></div>
+      <div id="net" class="hidden">
+        <div class="bar">
+          <input id="net-search" type="search" placeholder="Search the storage network" autocomplete="off">
+          <select id="net-sort"><option value="count">Most first</option><option value="name">A–Z</option></select>
+          <span id="net-info" class="note"></span>
+        </div>
+        <div id="net-grid"></div>
+        <div class="note">Tap = take a stack · hold = take one · in your inventory below, tap Quick (or hold an item) to store it</div>
+      </div>
       <div id="grid-wrap"><div id="screen-title"></div><div id="grid"></div></div>
     </section>
     <section id="tab-craft" class="tab">

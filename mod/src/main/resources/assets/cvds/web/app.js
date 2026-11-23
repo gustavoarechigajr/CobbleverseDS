@@ -109,7 +109,7 @@ function render() {
     if (kind === 'container' && tab === 'craft') loadRecipes();
     lastScreenKind = kind;
   }
-  if (tab === 'storage') renderGrid();
+  if (tab === 'storage') { renderGrid(); if (netActive() && !net) loadNet(); }
   if (tab === 'party') renderParty();
 }
 let lastPartySig = '';
@@ -169,6 +169,9 @@ function renderGrid(force) {
     if (img.complete && img.naturalWidth) hide(); else img.addEventListener('load', hide);
   });
   $('#bulk').classList.toggle('hidden', kind !== 'container');
+  // A terminal has no container slots: only storing (all / matching the network) applies.
+  const term = !!state.screen.terminal;
+  $$('#bulk [data-bulk="take"], #bulk [data-bulk="sortc"]').forEach(b => b.classList.toggle('hidden', term));
 }
 
 function slotHotbarIndex(s) {
@@ -286,7 +289,8 @@ $('#bulk').addEventListener('click', async e => {
     case 'take': await act({ kind: 'inv', op: 'quickAll', group: 'c', menu }); break;
     case 'store': await act({ kind: 'inv', op: 'quickAll', group: 'p', menu }); break;
     case 'matching': {
-      const keys = [...new Set(menuSlots().filter(s => s.g === 'c' && s.k).map(s => s.k))];
+      const keys = state.screen.terminal && net ? net.list.map(e => e.k) :
+        [...new Set(menuSlots().filter(s => s.g === 'c' && s.k).map(s => s.k))];
       for (const key of keys) await act({ kind: 'inv', op: 'quickAll', group: 'pc', key, menu });
       if (!keys.length) toast('Nothing in the container to match', true);
       break;
@@ -298,6 +302,59 @@ $('#bulk').addEventListener('click', async e => {
 
 $('#inv-search').addEventListener('input', () => renderGrid());
 window.addEventListener('resize', () => render());
+
+
+// ---------- Tom's Simple Storage terminal ----------
+let net = null, netSig = '', netTimer = null;
+function fmtCount(n) { return n >= 1e6 ? (n / 1e6).toFixed(n >= 1e7 ? 0 : 1) + 'M' : n >= 1e4 ? Math.round(n / 1000) + 'k' : n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(n); }
+async function loadNet() {
+  try {
+    const r = await api('/api/terminal?sig=' + netSig);
+    if (r.same) return;
+    netSig = r.sig;
+    net = r;
+    renderNet();
+  } catch (e) { $('#net-info').textContent = e.message; }
+}
+function netActive() { return state && state.screen && state.screen.terminal; }
+function renderNet() {
+  const box = $('#net');
+  if (!netActive() || !net || !net.open) { box.classList.add('hidden'); return; }
+  box.classList.remove('hidden');
+  const q = $('#net-search').value.trim().toLowerCase();
+  const items = net.items || {};
+  let list = net.list.filter(e => !q || ((items[e.k] || {}).name || e.k).toLowerCase().includes(q) || e.k.includes(q));
+  if ($('#net-sort').value === 'name') list.sort((a, b) => ((items[a.k] || {}).name || '').localeCompare((items[b.k] || {}).name || ''));
+  else list.sort((a, b) => b.n - a.n);
+  $('#net-info').textContent = `${net.list.length} kinds · ${net.free}/${net.slots} slots free`;
+  const html = list.slice(0, 400).map(e => {
+    const name = (items[e.k] || {}).name || e.k;
+    return `<div class="ni" data-k="${esc(e.k)}" title="${esc(name)}"><img src="${iconUrl(e.k)}" alt="" onerror="this.remove()" onload="this.nextElementSibling.style.display='none'"><div class="txt">${esc(name)}</div><span class="n">${fmtCount(e.n)}</span></div>`;
+  }).join('');
+  const g = $('#net-grid');
+  if (g.dataset.html !== html) { g.innerHTML = html || '<div class="note">Nothing matches.</div>'; g.dataset.html = html; }
+}
+(() => {
+  const g = $('#net-grid');
+  let timer = null, k = null, long = false, sx = 0, sy = 0;
+  g.addEventListener('pointerdown', e => {
+    const el = e.target.closest('.ni');
+    if (!el) return;
+    k = el.dataset.k; long = false; sx = e.clientX; sy = e.clientY;
+    timer = setTimeout(() => { long = true; if (navigator.vibrate) navigator.vibrate(30); act({ kind: 'terminal', k, one: true }); }, 450);
+  });
+  const cancel = () => { clearTimeout(timer); timer = null; };
+  g.addEventListener('pointermove', e => { if (Math.hypot(e.clientX - sx, e.clientY - sy) > 20) cancel(); });
+  g.addEventListener('pointercancel', cancel);
+  g.addEventListener('pointerup', () => {
+    const was = timer != null;
+    cancel();
+    if (!long && was && k) act({ kind: 'terminal', k, one: false });
+  });
+})();
+$('#net-search').addEventListener('input', renderNet);
+$('#net-sort').addEventListener('change', renderNet);
+setInterval(() => { if (tab === 'storage' && netActive()) loadNet(); else if (!netActive()) { $('#net').classList.add('hidden'); netSig = ''; } }, 700);
 
 // ---------- crafting ----------
 let recipeTimer;

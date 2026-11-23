@@ -140,11 +140,12 @@ class Env:
         time.sleep(0.3)
         return self.open(x, y, z)
 
-    def open(self, x, y, z):
+    def open(self, x, y, z, pred=None):
         debug(op="closeScreen")
         settle()
         debug(op="use", x=x, y=y, z=z)
-        return wait_for(lambda s: s["screen"]["kind"] == "container" and any(x["g"] in "cg" for x in s["menu"]["slots"]), 5, "container screen")
+        pred = pred or (lambda s: s["screen"]["kind"] == "container" and any(x["g"] in "cg" for x in s["menu"]["slots"]))
+        return wait_for(pred, 5, "container screen")
 
 
 TESTS = []
@@ -457,6 +458,8 @@ def party_panel(env):
     if "party" not in state():
         print("  (skipped: Cobblemon not loaded)")
         return
+    env.cmd("execute as @a run clearparty @s")
+    env.cmd("execute as @a run clearpc @s")
     env.cmd("execute as @a run pokegive @s pikachu level=12")
     env.cmd("execute as @a run pokegive @s bulbasaur level=5")
     s = wait_for(lambda s: sum(1 for m in s["party"]["slots"] if m.get("name")) >= 2, 8, "two party members")
@@ -563,6 +566,84 @@ def pc_boxes_moves_release_sort(env):
     wait_for(lambda s: s["screen"]["kind"] != "pc", 4, "PC closed")
     r = action(kind="pc", op="move", **{"from": {"type": "pc", "box": 0, "slot": 0}}, to={"type": "pc", "box": 2, "slot": 0})
     assert r["ok"] is False and "PC" in r["error"], r
+
+
+def term(sig=""):
+    return http("/api/terminal?sig=" + sig)
+
+
+def net_count(t, key):
+    return sum(e["n"] for e in t.get("list", []) if e["k"] == key)
+
+
+@test
+def toms_storage_terminal(env):
+    """Tom's Simple Storage only: browse the network, take a stack / one, store, craft from the network."""
+    env.reset()
+    if term().get("ok") is False:
+        print("  (skipped: Tom's Simple Storage not loaded)")
+        return
+    # chest A + chest B -> inventory connector <- terminal ("facing" points at the inventory it reads)
+    env.cmd('setblock 4 -60 0 minecraft:chest{Items:[{Slot:0b,id:"minecraft:stone",count:64},{Slot:1b,id:"minecraft:oak_log",count:10}]}')
+    env.cmd('setblock 3 -60 1 minecraft:chest{Items:[{Slot:0b,id:"minecraft:stone",count:36},{Slot:3b,id:"minecraft:dirt",count:5}]}')
+    env.cmd("setblock 3 -60 0 toms_storage:inventory_connector")
+    env.cmd("setblock 2 -60 0 toms_storage:storage_terminal[facing=east]")
+    time.sleep(0.5)
+    s = env.open(2, -60, 0, lambda s: s["screen"].get("terminal") is True)
+    deadline = time.time() + 8
+    while True:
+        t = term()
+        if net_count(t, "minecraft:stone") == 100 or time.time() > deadline:
+            break
+        time.sleep(0.4)
+    assert t["open"] and net_count(t, "minecraft:stone") == 100 and net_count(t, "minecraft:dirt") == 5, t.get("list")
+    assert t["items"]["minecraft:oak_log"]["name"] == "Oak Log"
+    assert term(t["sig"]).get("same") is True
+    assert action(kind="terminal", k="minecraft:stone")["ok"]
+    s = wait_for(lambda s: count(s, "minecraft:stone") == 64, 5, "64 stone pulled")
+    assert action(kind="terminal", k="minecraft:dirt", one=True)["ok"]
+    s = wait_for(lambda s: count(s, "minecraft:dirt") == 1, 5, "1 dirt pulled")
+    assert not any(x.get("k") for x in slots(s, "a")), "take-one must not leave items in the offhand"
+    t = term()
+    assert net_count(t, "minecraft:stone") == 36 and net_count(t, "minecraft:dirt") == 4, t["list"]
+    no_cursor(s)
+    # store: shift-click a player stack back into the network
+    src = next(x["i"] for x in slots(s, "ph") if x.get("k") == "minecraft:stone")
+    action(kind="inv", op="quick", slot=src, menu=mid(s))
+    s = wait_for(lambda s: count(s, "minecraft:stone") == 0, 5, "stone stored")
+    deadline = time.time() + 5
+    while net_count(term(), "minecraft:stone") != 100 and time.time() < deadline:
+        time.sleep(0.3)
+    assert net_count(term(), "minecraft:stone") == 100
+    r = action(kind="terminal", k="minecraft:diamond")
+    assert r["ok"] is False, r
+    # crafting terminal: planks straight from logs stored in the network
+    env.cmd("recipe take @a *")
+    debug(op="closeScreen")
+    env.cmd("setblock 2 -60 0 toms_storage:crafting_terminal[facing=east]")
+    time.sleep(0.5)
+    s = env.open(2, -60, 0, lambda s: s["screen"].get("terminal") is True and s["menu"].get("grid") == [3, 3])
+    deadline = time.time() + 8
+    while True:  # the terminal's item list arrives a moment after it opens
+        rs = http("/api/recipes?q=oak%20planks")
+        r = next(r for r in rs["recipes"] if r["k"] == "minecraft:oak_planks")
+        if r["can"] or time.time() > deadline:
+            break
+        time.sleep(0.4)
+    assert r["can"], "network logs should count as ingredients: %r" % r
+    res = action(kind="craft", id=r["id"], max=False)
+    assert res["ok"], res
+    try:
+        s = wait_for(lambda s: count(s, "minecraft:oak_planks") == 4, 5, "planks crafted from the network")
+    except AssertionError:
+        raise AssertionError("crafting terminal did not craft a locked recipe from the network")
+    no_cursor(s)
+    assert action(kind="craft", id=r["id"], max=True)["ok"]
+    s = wait_for(lambda s: count(s, "minecraft:oak_planks") > 4, 5, "more planks with Max")
+    time.sleep(1.5)
+    s = settle()
+    print(f"  (Max crafted {count(s, 'minecraft:oak_planks') - 4} more planks; network logs left: {net_count(term(), 'minecraft:oak_log')})")
+    no_cursor(s)
 
 
 @test

@@ -44,6 +44,16 @@ public final class Api implements dev.cvds.net.MiniHttpServer.Handler {
 					return sig.equals(since) ? "{\"same\":true,\"sig\":\"" + sig + "\"}" : "{\"sig\":\"" + sig + "\"," + body.substring(1);
 				});
 			}
+			case "/api/terminal": {
+				if (!Snapshot.TOMS) return Response.json(error("Tom's Simple Storage not installed").toString());
+				String since = req.query().getOrDefault("sig", "");
+				return onClientRaw(mc, () -> {
+					if (mc.player == null) return error("not in game").toString();
+					String body = Terminal.json(mc).toString();
+					String sig = Integer.toHexString(body.hashCode());
+					return sig.equals(since) ? "{\"same\":true,\"sig\":\"" + sig + "\"}" : "{\"sig\":\"" + sig + "\"," + body.substring(1);
+				});
+			}
 			case "/api/recipes": {
 				String q = req.query().getOrDefault("q", "");
 				return onClient(mc, () -> mc.player == null ? error("not in game") : Crafting.search(mc, q, 60));
@@ -76,6 +86,7 @@ public final class Api implements dev.cvds.net.MiniHttpServer.Handler {
 				if (a.has("send") && a.get("send").getAsBoolean()) Party.sendOut(mc, slot); else Party.select(slot);
 				yield ok();
 			}
+			case "terminal" -> Snapshot.TOMS ? Terminal.take(mc, a.get("k").getAsString(), a.has("one") && a.get("one").getAsBoolean()) : error("Tom's Simple Storage not installed");
 			case "pc" -> Snapshot.COBBLEMON ? Pc.action(mc, a) : error("cobblemon not installed");
 			case "hotbarSelect" -> {
 				int s = a.get("slot").getAsInt();

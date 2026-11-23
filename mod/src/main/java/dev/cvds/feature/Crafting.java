@@ -79,6 +79,10 @@ public final class Crafting {
 		var holder = mc.level.getRecipeManager().byKey(ResourceLocation.parse(id)).orElse(null);
 		if (holder == null || !(holder.value() instanceof CraftingRecipe recipe)) return Api.error("unknown recipe " + id);
 		MenuInv inv = new MenuInv(mc);
+		if (Snapshot.TOMS && Terminal.craftingTerminal(mc)) {
+			// Tom's crafting terminal fills the grid from the whole storage network on the server.
+			return Terminal.craft(mc, id, max);
+		}
 		clearGrid(inv);
 		// Ingredients are placed with ordinary clicks rather than the recipe-book packet: servers
 		// ignore that packet for recipes the player hasn't unlocked, and Cobbleverse never unlocks them.
