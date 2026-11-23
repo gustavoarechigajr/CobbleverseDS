@@ -43,7 +43,12 @@ final class Spawns {
 				};
 				var src = new CommandSourceStack(sink, player.position(), player.getRotationVector(), player.serverLevel(), 4,
 					player.getName().getString(), player.getDisplayName(), server, player);
-				server.getCommands().performPrefixedCommand(src, "checkspawn " + bucket);
+				SpawnCapture.begin(lines);
+				try {
+					server.getCommands().performPrefixedCommand(src, "checkspawn " + bucket);
+				} finally {
+					SpawnCapture.end();
+				}
 				out.put(bucket, lines);
 			}
 			return out;

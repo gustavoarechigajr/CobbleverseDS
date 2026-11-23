@@ -9,7 +9,7 @@ import java.util.regex.Pattern;
 public final class SpawnText {
 	private SpawnText() {}
 	// Names can contain spaces, dots, apostrophes, colons, hyphens and gender symbols.
-	static final Pattern ENTRY = Pattern.compile("(\\p{L}[\\p{L}\\p{N} .'\u2019:\\-\u2640\u2642]*?)\\s+(\\d+(?:[.,]\\d+)?)%");
+	static final Pattern ENTRY = Pattern.compile("(\\p{L}[\\p{L}\\p{N} .'\u2019:\\-\u2640\u2642]*?):?\\s+(\\d+(?:[.,]\\d+)?)%");
 
 	/** [name, percent] pairs in output order. */
 	public static List<String[]> parse(List<String> lines) {

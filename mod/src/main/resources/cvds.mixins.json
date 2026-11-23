@@ -3,6 +3,6 @@
   "minVersion": "0.8",
   "package": "dev.cvds.mixin",
   "compatibilityLevel": "JAVA_21",
-  "client": ["KeyMappingAccessor", "ChatComponentAccessor", "GameRendererMixin"],
+  "client": ["KeyMappingAccessor", "ChatComponentAccessor", "GameRendererMixin", "ServerPlayerMixin"],
   "injectors": { "defaultRequire": 1 }
 }
