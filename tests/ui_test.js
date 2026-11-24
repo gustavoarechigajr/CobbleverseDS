@@ -57,6 +57,12 @@ async function fakeFetch(url, opts) {
   if (u.pathname === '/api/pc') return json({ sig: 's1', open: true, party: st.party.slots, boxes: [{ name: 'Box 1', slots: [{ id: 'p1', name: 'Eevee', species: 'Eevee', lvl: 5, types: ['Normal'], ivs: { HP: 31 }, ivTotal: 31, moves: ['Tackle'] }, ...Array(29).fill({})] }], items: {}, sortModes: ['NAME'] });
   if (u.pathname === '/api/terminal') return json({ sig: 't1', open: true, menu: 5, list: [{ k: 'minecraft:diamond', n: 1234 }], items: { 'minecraft:diamond': { name: 'Diamond', max: 64 } }, free: 10, slots: 54 });
   if (u.pathname === '/api/spawns') return json({ ok: true, items: {}, buckets: [{ bucket: 'common', list: [{ name: 'Pidgey', pct: 40, dex: 16, dexState: 'CAUGHT', types: 'normal/flying' }, { name: 'Rattata', pct: 35, dex: 19, dexState: 'NONE' }] }, { bucket: 'ultra-rare', list: [] }] });
+  if (u.pathname === '/api/pokemon') return json({ ok: true, slot: 0, name: 'Pikachu', species: 'Pikachu', dex: 25, lvl: 12, hp: 30, maxHp: 35, types: ['Electric'],
+    nature: 'Brave', ability: 'Static', nickname: '', friendship: 70, xp: 1500, ivs: { HP: 31, ATTACK: 10 }, ivTotal: 41, evs: { HP: 4 }, evTotal: 4,
+    moveList: [{ id: 'thunderbolt', name: 'Thunderbolt', type: 'Electric', cat: 'special', power: 90, acc: 100, pp: 15, maxPp: 15 },
+               { id: 'quickattack', name: 'Quick Attack', type: 'Normal', cat: 'physical', power: 40, acc: 100, pp: 30, maxPp: 30 }],
+    bench: [{ id: 'thundershock', name: 'Thunder Shock', type: 'Electric', cat: 'special', power: 40, acc: 100 }],
+    evolutions: [{ i: 0, name: 'Raichu' }], items: {} });
   if (u.pathname === '/api/mirror') return { ok: true, status: 204, headers: { get: () => null }, json: async () => ({}) };
   if (u.pathname === '/api/map') return json({ ok: true, dim: 'minecraft:overworld', mappable: true, x: 0, z: 0, yaw: 0, tile: 256, tiles: [], xaero: true,
     waypoints: [{ i: 0, name: 'Home', initials: 'H', x: 100, y: 64, z: 100 }], mons: [{ name: 'Pidgey', lvl: 4, x: -30, z: 0, wild: true, shiny: false }] });
@@ -158,15 +164,30 @@ const activeTab = () => ($('#tabs button.on') || {}).dataset?.tab;
   w.__t.showTab('party'); await sleep(100);
   check($('#party').textContent.includes('Pikachu'), 'party tab lists the party');
 
-  // party: tap a card for its summary sheet; reorder from the sheet (drag needs a real layout)
+  // party: tapping a card opens the Pokémon page (the Summary as big buttons)
   actions.length = 0;
-  tap($('#party [data-p="0"]')); await sleep(50);
-  check(!$('#sheet').classList.contains('hidden') && $('#sheet').textContent.includes('Pikachu'), 'tapping a party card opens its summary');
+  tap($('#party [data-p="0"]')); await sleep(150);
+  check(!$('#pkpage').classList.contains('hidden') && $('#pk-name').textContent.includes('Pikachu'), 'tapping a party card opens its Pokémon page');
   check(actions.some(a => a.kind === 'party' && a.slot === 0 && !a.send), 'tapping a party card selects it');
-  [...$('#sheet').querySelectorAll('[data-opt]')].find(b => b.textContent.includes('Slot 3')).click(); await sleep(50);
+  check($('#pk-body').textContent.includes('Thunderbolt') && $('#pk-evo').textContent.includes('Raichu'), 'the page shows moves and a waiting evolution');
+  actions.length = 0;
+  $('#pk-body [data-pkdn="0"]').click(); await sleep(50);
+  check(actions.some(a => a.kind === 'pokemon' && a.op === 'swapMoves' && a.a === 0 && a.b === 1), '▼ reorders moves');
+  $('#pk-body [data-pkchg="0"]').click(); await sleep(20);
+  [...$$('#sheet [data-opt]')].find(b => b.textContent.includes('Thunder Shock')).click(); await sleep(50);
+  check(actions.some(a => a.op === 'benchMove' && a.from === 'thunderbolt' && a.to === 'thundershock'), 'Change swaps in a move it knew before');
+  $('#pk-evo [data-pkevo]').click(); await sleep(20);
+  [...$$('#sheet [data-opt]')].find(b => b.textContent.includes('Evolve')).click(); await sleep(50);
+  check(actions.some(a => a.op === 'evolve' && a.i === 0), 'Evolve sends the chosen evolution');
+  $('#pk-tabs [data-pkt="info"]').click(); await sleep(20);
+  $('#pk-nick').value = 'Sparky'; $('#pk-save').click(); await sleep(50);
+  check(actions.some(a => a.op === 'rename' && a.name === 'Sparky'), 'Rename sends the nickname');
+  actions.length = 0;
+  $('#pk-body [data-pkslot="2"]').click(); await sleep(50);
   const re = actions.find(a => a.kind === 'pc' && a.op === 'move');
-  check(re && re.from.type === 'party' && re.from.slot === 0 && re.to.slot === 2, 'party reorder sends a party move');
-  check($('#sheet').classList.contains('hidden'), 'choosing an option closes the sheet');
+  check(re && re.from.type === 'party' && re.from.slot === 0 && re.to.slot === 2, 'party slot keys move it in the party');
+  $('#pk-close').click(); await sleep(20);
+  check($('#pkpage').classList.contains('hidden'), 'Close hides the Pokémon page');
   actions.length = 0;
   $('#party [data-send="0"]').click(); await sleep(50);
   check(actions.some(a => a.kind === 'party' && a.slot === 0 && a.send), 'each card has its own Send out key');
@@ -286,7 +307,12 @@ const activeTab = () => ($('#tabs button.on') || {}).dataset?.tab;
   st = Object.assign(STATES.none(), { screen: { kind: 'summary', cls: 'com.cobblemon.mod.common.client.gui.summary.Summary', title: 'Summary',
     summary: { tab: 1, side: 0, sel: 0, party: ['Pikachu'] } } }); rev++;
   await sleep(400);
-  check(!$('#screenpad').classList.contains('hidden') && $('#sp-title').textContent === 'Summary', 'a menu with no panel page opens the mirror');
+  check(!$('#pkpage').classList.contains('hidden') && $('#screenpad').classList.contains('hidden'), "the game's Summary opens the Pokémon page, not the mirror");
+  $('#pk-game').click(); await sleep(100);
+  check(!$('#screenpad').classList.contains('hidden'), 'Game view shows the real Summary in the mirror');
+  st = Object.assign(STATES.none(), { screen: { kind: 'other', cls: 'com.cobblemon.mod.common.client.gui.pokedex.PokedexGUI', title: 'Pokédex' } }); rev++;
+  await sleep(400);
+  check(!$('#screenpad').classList.contains('hidden') && $('#sp-title').textContent === 'Pokédex', 'a menu with no panel page opens the mirror');
   check(!$('#pad') && !$('#sum-next'), 'the touchpad and its cursor controls are gone');
   actions.length = 0;
   tap($('#mirror')); await sleep(80);

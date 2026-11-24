@@ -99,6 +99,11 @@ public final class Api implements dev.cvds.net.MiniHttpServer.Handler {
 				return Response.json(BattleBag.list(mc).toString());
 			}
 			case "/api/map": return onClient(mc, () -> MapApi.info(mc));
+			case "/api/pokemon": {
+				if (!Snapshot.COBBLEMON) return Response.json(error("cobblemon not installed").toString());
+				int slot = (int) parseLong(req.query().get("slot"), 0);
+				return onClient(mc, () -> mc.player == null ? error("not in game") : PokemonPage.json(slot));
+			}
 			case "/api/recipes": {
 				String q = req.query().getOrDefault("q", "");
 				Set<String> favs = new HashSet<>();
@@ -139,6 +144,7 @@ public final class Api implements dev.cvds.net.MiniHttpServer.Handler {
 			case "battle" -> Snapshot.COBBLEMON ? Battle.choose(mc, a) : error("cobblemon not installed");
 			case "pc" -> Snapshot.COBBLEMON ? Pc.action(mc, a) : error("cobblemon not installed");
 			case "summary" -> Snapshot.COBBLEMON ? Screens.act(mc, a) : error("cobblemon not installed");
+			case "pokemon" -> Snapshot.COBBLEMON ? PokemonPage.act(mc, a) : error("cobblemon not installed");
 			case "pointer" -> Pointer.act(mc, a);
 			case "map" -> { try { yield MapApi.act(mc, a); } catch (Exception e) { yield error(e.getClass().getSimpleName() + ": " + e.getMessage()); } }
 			case "hotbarSelect" -> {

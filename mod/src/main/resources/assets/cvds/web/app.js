@@ -105,6 +105,7 @@ $$('#tabs button').forEach(b => b.addEventListener('click', () => showTab(b.data
 
 function render() {
   renderStatus();
+  summaryWatch();
   renderScreenpad();
   if (!state || !state.inGame) return;
   const kind = state.screen && state.screen.kind;
@@ -706,7 +707,7 @@ $('#party').addEventListener('click', e => {
 });
 gestures($('#party'), '.mon', {
   canDrag: el => !el.classList.contains('empty'),
-  onTap: el => { if (!el.classList.contains('empty')) partySummary(Number(el.dataset.p)); },
+  onTap: el => { if (!el.classList.contains('empty')) { act({ kind: 'party', slot: Number(el.dataset.p) }); pkOpen(Number(el.dataset.p)); } },
   onLong: el => { if (!el.classList.contains('empty')) partySummary(Number(el.dataset.p)); },
   onDrop: (from, to) => partyMove(Number(from.dataset.p), Number(to.dataset.p)),
 });
@@ -1517,6 +1518,130 @@ $('#map-wps').addEventListener('click', () => {
 });
 setInterval(() => { if (tab === 'map') loadMap(); }, 1000);
 
+// ---------- Pokémon page: the Summary as big buttons ----------
+const pk = { open: false, slot: 0, data: null, tab: 'moves', fromSummary: false, gameView: false, busy: false };
+async function pkLoad() {
+  try {
+    const d = await api('/api/pokemon?slot=' + pk.slot);
+    pk.data = d;
+    state.items = Object.assign({}, state.items, d.items || {});
+  } catch (e) { pk.data = { error: e.message }; }
+  pkRender();
+}
+function pkOpen(slot, fromSummary) {
+  pk.open = true; pk.slot = slot; pk.fromSummary = !!fromSummary; pk.data = null;
+  $('#pkpage').classList.remove('hidden');
+  pkRender();
+  pkLoad();
+}
+function pkClose() {
+  pk.open = false;
+  $('#pkpage').classList.add('hidden');
+  if (pk.fromSummary && state.screen && state.screen.kind === 'summary') padSend({ op: 'escape' }); // close the game's Summary too
+  pk.fromSummary = false;
+}
+function partyNames() { return ((state && state.party && state.party.slots) || []).map(m => (m && m.name) || ''); }
+function pkStep(d) {
+  const names = partyNames();
+  let i = pk.slot;
+  for (let k = 0; k < 6; k++) { i = (i + d + 6) % 6; if (names[i]) break; }
+  pk.slot = i; pk.data = null; pkRender(); pkLoad();
+  if (pk.fromSummary) act({ kind: 'summary', op: 'select', i }); // keep the game's Summary on the same Pokémon
+}
+async function pkAct(body, done) {
+  if (pk.busy) return;
+  pk.busy = true;
+  try { await api('/api/action', Object.assign({ kind: 'pokemon', slot: pk.slot }, body)); if (done) toast(done, true); }
+  catch (e) { toast(e.message); }
+  finally { pk.busy = false; }
+  setTimeout(pkLoad, 350); // the server applies it, then the client's copy updates
+}
+function pkMoveCard(m, i, n) {
+  const col = TYPE_COLOR[(m.type || '').toLowerCase()] || '#555';
+  const pow = m.power > 0 ? `Power ${Math.round(m.power)}` : '', acc = m.acc > 0 ? `Acc ${Math.round(m.acc)}%` : '';
+  return `<div class="pkm">
+    <button class="mv" data-pkdesc="${i}" style="background:linear-gradient(180deg, ${col}, ${darken(col, .75)});${typeInk(m.type)}">
+      <span class="t">${esc(m.name)}</span>
+      <span class="row"><span>${esc(m.type)} · ${esc(m.cat)}</span><span>PP ${m.pp}/${m.maxPp}</span></span>
+      <span class="row"><span>${pow} ${acc}</span></span></button>
+    <div class="ord"><button data-pkup="${i}" ${i === 0 ? 'disabled' : ''}>▲</button><button data-pkdn="${i}" ${i === n - 1 ? 'disabled' : ''}>▼</button></div>
+    <button class="chg" data-pkchg="${i}">Change</button></div>`;
+}
+function pkRender() {
+  if (!pk.open) return;
+  const d = pk.data, names = partyNames();
+  $('#pk-game').classList.toggle('hidden', !pk.fromSummary);
+  $$('#pk-tabs [data-pkt]').forEach(b => b.classList.toggle('on', b.dataset.pkt === pk.tab));
+  if (!d) { $('#pk-name').textContent = names[pk.slot] || ''; $('#pk-body').innerHTML = '<div class="note">Loading…</div>'; return; }
+  if (d.error) { $('#pk-body').innerHTML = `<div class="note">${esc(d.error)}</div>`; return; }
+  const spr = $('#pk-spr');
+  if (d.k && spr.dataset.k !== d.k) { spr.src = iconUrl(d.k); spr.dataset.k = d.k; }
+  $('#pk-name').innerHTML = `${esc(d.name)}${d.shiny ? ' ★' : ''}${genderMark(d)}<small>Lv ${d.lvl}</small>`;
+  $('#pk-sub').innerHTML = typePills(d.types) + (d.held ? ` · holding ${esc(d.held)}` : '');
+  const frac = d.maxHp ? d.hp / d.maxHp : 0;
+  $('#pk-hp').innerHTML = `<div class="sub">${d.hp}/${d.maxHp} HP${d.fainted ? ' · Fainted' : ''}</div><div class="hp"><i style="width:${Math.round(frac * 100)}%;background:hsl(${Math.round(frac * 120)},75%,45%)"></i></div>`;
+  const evo = d.evolutions || [];
+  $('#pk-evo').classList.toggle('hidden', !evo.length);
+  $('#pk-evo').innerHTML = evo.map(e => `<button data-pkevo="${e.i}">${e.k ? `<img src="${iconUrl(e.k)}" alt="">` : ''}Evolve into ${esc(e.name)}</button>`).join('');
+  const body = $('#pk-body');
+  if (pk.tab === 'moves') {
+    const ms = d.moveList || [];
+    body.innerHTML = ms.map((m, i) => pkMoveCard(m, i, ms.length)).join('') +
+      `<div class="note">Tap a move for details · ▲▼ reorder · Change swaps in a move it knew before (${(d.bench || []).length} available)</div>`;
+  } else if (pk.tab === 'stats') {
+    const row = (k, l) => {
+      const iv = (d.ivs || {})[k] || 0, ev = (d.evs || {})[k] || 0;
+      return `<div class="row"><span>${l}</span><div class="bar2"><i class="${iv === 31 ? 'max' : ''}" style="width:${Math.round(iv / 31 * 100)}%"></i></div><span>${iv}</span>
+        <div class="bar2 ev"><i style="width:${Math.round(ev / 252 * 100)}%"></i></div><span>${ev}</span></div>`;
+    };
+    body.innerHTML = `<div class="pk-stats"><div class="row hd"><span></span><span>IVs (${d.ivTotal}/186)</span><span></span><span>EVs (${d.evTotal}/510)</span><span></span></div>
+      ${row('HP', 'HP')}${row('ATTACK', 'Atk')}${row('DEFENCE', 'Def')}${row('SPECIAL_ATTACK', 'SpA')}${row('SPECIAL_DEFENCE', 'SpD')}${row('SPEED', 'Spe')}</div>
+      <div class="pk-kv"><div>Friendship<b>${d.friendship}/255</b></div><div>Experience<b>${d.xp}</b></div></div>`;
+  } else {
+    body.innerHTML = `<div class="pk-kv">
+        <div>Species<b>${esc(d.species)}${d.dex ? ' #' + d.dex : ''}</b></div><div>Nature<b>${esc(d.nature || '—')}</b></div>
+        <div>Ability<b>${esc(d.ability || '—')}</b></div><div>Held item<b>${esc(d.held || 'Nothing')}</b></div></div>
+      <div class="pk-h">Nickname</div>
+      <div class="pk-rename"><input id="pk-nick" type="text" maxlength="12" placeholder="${esc(d.species)}" value="${esc(d.nickname || '')}" autocomplete="off"><button id="pk-save">Save</button></div>
+      <div class="pk-h">Party slot</div>
+      <div class="pk-slots">${[0, 1, 2, 3, 4, 5].map(i => `<button data-pkslot="${i}" class="${i === pk.slot ? 'on' : ''}">${i + 1}<small>${esc((names[i] || '—').slice(0, 7))}</small></button>`).join('')}</div>`;
+  }
+}
+$('#pk-prev').addEventListener('click', () => pkStep(-1));
+$('#pk-next').addEventListener('click', () => pkStep(1));
+$('#pk-close').addEventListener('click', pkClose);
+$('#pk-game').addEventListener('click', () => { pk.gameView = true; pk.open = false; $('#pkpage').classList.add('hidden'); padHidden = false; renderScreenpad(); });
+$('#pk-tabs').addEventListener('click', e => { const b = e.target.closest('[data-pkt]'); if (b) { pk.tab = b.dataset.pkt; pkRender(); } });
+$('#pk-evo').addEventListener('click', e => {
+  const b = e.target.closest('[data-pkevo]');
+  const ev = b && ((pk.data && pk.data.evolutions) || []).find(x => x.i === Number(b.dataset.pkevo));
+  if (ev) sheet(`Evolve into ${ev.name}?`, `${esc(pk.data.name)} will evolve into ${esc(ev.name)}.`, [
+    { label: 'Evolve', cls: 'on', run: () => pkAct({ op: 'evolve', i: ev.i }, `${pk.data.name} is evolving!`) }]);
+});
+$('#pk-body').addEventListener('click', e => {
+  const d = pk.data;
+  if (!d) return;
+  const up = e.target.closest('[data-pkup]'), dn = e.target.closest('[data-pkdn]');
+  if (up || dn) { const i = Number((up || dn).dataset[up ? 'pkup' : 'pkdn']); pkAct({ op: 'swapMoves', a: i, b: up ? i - 1 : i + 1 }); return; }
+  const ds = e.target.closest('[data-pkdesc]');
+  if (ds) { const m = d.moveList[Number(ds.dataset.pkdesc)]; moveInfo(m); return; }
+  const ch = e.target.closest('[data-pkchg]');
+  if (ch) {
+    const m = d.moveList[Number(ch.dataset.pkchg)], bench = d.bench || [];
+    if (!bench.length) return toast(`${d.name} has no other moves it knew before`, true);
+    sheet(`Replace ${m.name} with`, null, bench.map(b => ({ label: b.name, sub: `${b.type} · ${b.cat}${b.power > 0 ? ' · ' + Math.round(b.power) : ''}`,
+      run: () => pkAct({ op: 'benchMove', from: m.id, to: b.id }, `${b.name} replaced ${m.name}`) })));
+    return;
+  }
+  if (e.target.closest('#pk-save')) { pkAct({ op: 'rename', name: $('#pk-nick').value }, $('#pk-nick').value.trim() ? 'Renamed' : 'Nickname cleared'); return; }
+  const sl = e.target.closest('[data-pkslot]');
+  if (sl && Number(sl.dataset.pkslot) !== pk.slot) {
+    const to = Number(sl.dataset.pkslot);
+    partyMove(pk.slot, to).then(() => { pk.slot = to; pkLoad(); });
+  }
+});
+setInterval(() => { if (pk.open && !pk.busy && document.activeElement !== $('#pk-nick')) pkLoad(); }, 2500);
+
 // ---------- menu mirror: the open menu as a live picture you tap directly ----------
 // Shown over the tab area for menus the panel has no page for (containers, PC and battle have their own).
 let padHidden = false, padScreen = '';
@@ -1525,7 +1650,16 @@ function padWanted() {
   const sc = state && state.screen;
   if (!sc) return false;
   if (!state.inGame) return sc.kind === 'menu';
-  return sc.kind === 'summary' || (sc.kind === 'other' && !PAD_SKIP.test(sc.cls || ''));
+  if (sc.kind === 'summary') return pk.gameView; // the Pokémon page covers the Summary, unless asked for the game view
+  return sc.kind === 'other' && !PAD_SKIP.test(sc.cls || '');
+}
+// Open/close the Pokémon page with the game's Summary.
+let lastSummary = false;
+function summaryWatch() {
+  const sc = state && state.inGame && state.screen, open = !!(sc && sc.kind === 'summary' && sc.summary);
+  if (open && !lastSummary && !pk.gameView) pkOpen(Math.max(0, sc.summary.sel), true);
+  if (!open && lastSummary) { pk.gameView = false; if (pk.fromSummary) { pk.fromSummary = false; pk.open = false; $('#pkpage').classList.add('hidden'); } }
+  lastSummary = open;
 }
 function renderScreenpad() {
   const want = padWanted();

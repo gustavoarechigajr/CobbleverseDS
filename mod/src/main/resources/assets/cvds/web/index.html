@@ -69,7 +69,7 @@
     </section>
     <section id="tab-party" class="tab">
       <div id="party" class="party"></div>
-      <div class="bar"><div class="shortcuts" data-sc="party"></div><span class="note">Tap a Pokémon for its summary · drag one onto another slot to reorder</span></div>
+      <div class="bar"><div class="shortcuts" data-sc="party"></div><span class="note">Tap a Pokémon for its page · drag one onto another slot to reorder</span></div>
     </section>
     <section id="tab-pc" class="tab">
       <div class="bar">
@@ -145,6 +145,19 @@
       <div class="note" id="mir-help">Tap = click · hold = right-click · drag = drag · two fingers = scroll · pinch or double-tap = zoom</div>
     </section>
     <button id="sp-show" class="hidden">Show menu</button>
+    <!-- Pokémon page: everything the Summary shows, with its edits as big buttons -->
+    <section id="pkpage" class="hidden" aria-label="Pokémon">
+      <div class="pk-head">
+        <button id="pk-prev" class="nav">◀</button>
+        <img id="pk-spr" alt="">
+        <div class="pk-id"><div id="pk-name"></div><div id="pk-sub"></div><div id="pk-hp"></div></div>
+        <button id="pk-next" class="nav">▶</button>
+        <div class="pk-acts"><button id="pk-close">Close</button><button id="pk-game" class="hidden">Game view</button></div>
+      </div>
+      <div id="pk-evo" class="hidden"></div>
+      <div class="seg views" id="pk-tabs"><button data-pkt="moves" class="on">Moves</button><button data-pkt="stats">Stats</button><button data-pkt="info">Info</button></div>
+      <div id="pk-body"></div>
+    </section>
   </main>
 </div>
 <div id="sheet" class="hidden"><div class="panel" role="dialog" aria-modal="true"></div></div>

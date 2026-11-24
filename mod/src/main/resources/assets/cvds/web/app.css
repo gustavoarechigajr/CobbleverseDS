@@ -392,6 +392,48 @@ details .keys { padding: 4px 0 14px; }
 #map-tools button { box-shadow: 0 5px 0 var(--ink), 0 0 0 4px rgba(0,0,0,.35); }
 #map-info { position: absolute; left: 12px; bottom: 10px; padding: 6px 14px; border-radius: 12px; background: rgba(0,0,0,.6); color: var(--text); font-size: 22px; }
 
+/* ---------- Pokémon page ---------- */
+#pkpage { position: absolute; inset: 0; z-index: 9; background: var(--screen); border-radius: 14px; padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.pk-head { display: flex; align-items: center; gap: 12px; }
+.pk-head .nav { min-width: 76px; align-self: stretch; }
+#pk-spr { width: 132px; height: 132px; object-fit: contain; flex: none; filter: drop-shadow(0 6px 0 rgba(0,0,0,.3)); }
+.pk-id { flex: 1; min-width: 0; }
+#pk-name { font: 600 38px/1.05 var(--pixel); color: var(--paper); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#pk-name small { font: 800 24px var(--round); color: var(--dim); margin-left: 8px; }
+#pk-sub { margin: 6px 0; font: 700 22px var(--round); color: var(--dim); display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+#pk-sub .pill { margin: 0; font-size: 19px; }
+#pk-hp .hp { height: 18px; }
+#pk-hp .sub { font: 800 21px var(--round); color: var(--text); margin-bottom: 4px; }
+.pk-acts { display: flex; flex-direction: column; gap: 8px; }
+.pk-acts button { min-height: 62px; }
+#pk-close { background: linear-gradient(180deg, #ffb3aa, var(--bad)); color: #fff; text-shadow: 1px 1px 0 rgba(0,0,0,.35); }
+#pk-evo { display: flex; gap: 10px; }
+#pk-evo button { flex: 1; display: flex; align-items: center; justify-content: center; gap: 12px; min-height: 84px; font: 600 28px var(--pixel);
+  background: linear-gradient(135deg, #fff6a3, var(--yellow) 60%, #ff9f43); }
+#pk-evo img { width: 64px; height: 64px; object-fit: contain; }
+#pk-body { flex: 1; min-height: 0; overflow-y: auto; display: flex; flex-direction: column; gap: 10px; }
+.pkm { display: flex; align-items: stretch; gap: 10px; }
+.pkm .mv { flex: 1; min-height: 120px; }
+.pkm .ord { display: flex; flex-direction: column; gap: 8px; }
+.pkm .ord button { min-height: 0; flex: 1; min-width: 80px; font-size: 28px; }
+.pkm .chg { min-width: 130px; font-size: 24px; }
+.pk-stats { background: var(--paper); color: var(--ink); border: 3px solid var(--ink); border-radius: 16px; padding: 14px 16px; font-weight: 800; }
+.pk-stats .row { display: grid; grid-template-columns: 70px 1fr 50px 1fr 56px; gap: 10px; align-items: center; margin: 8px 0; font-size: 22px; }
+.pk-stats .hd { color: #4f5563; font: 800 18px var(--round); }
+.pk-stats .bar2 { height: 18px; background: #d9dce2; border: 2px solid var(--ink); border-radius: 9px; overflow: hidden; }
+.pk-stats .bar2 i { display: block; height: 100%; background: var(--blue); }
+.pk-stats .bar2 i.max { background: var(--good); }
+.pk-stats .bar2.ev i { background: #ff9f43; }
+.pk-kv { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.pk-kv div { background: var(--slot); border-radius: 12px; padding: 10px 14px; font: 700 22px var(--round); box-shadow: inset 3px 3px 0 var(--slot-lo), inset -3px -3px 0 var(--slot-hi); }
+.pk-kv b { display: block; font: 600 26px var(--pixel); color: var(--paper); margin-top: 2px; }
+.pk-rename { display: flex; gap: 10px; }
+.pk-slots { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+.pk-slots button { min-width: 0; padding: 4px; display: flex; flex-direction: column; align-items: center; justify-content: center; font: 600 26px/1 var(--pixel); }
+.pk-slots button small { font: 800 15px var(--round); color: #4f5563; margin-top: 4px; }
+.pk-slots button.on { background: linear-gradient(180deg, var(--yellow-hi), var(--yellow)); }
+.pk-h { margin: 6px 2px 0; font: 600 26px var(--pixel); color: var(--yellow); }
+
 /* ---------- menu mirror ---------- */
 #screenpad { position: absolute; inset: 0; z-index: 8; background: var(--screen-deep); border-radius: 14px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
 #screenpad .sp-head { display: flex; align-items: center; gap: 10px; }
