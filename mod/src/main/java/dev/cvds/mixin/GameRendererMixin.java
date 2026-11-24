@@ -19,8 +19,7 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class GameRendererMixin {
 	@Inject(method = "render", at = @At("TAIL"))
 	private void cvds$blackout(DeltaTracker delta, boolean renderLevel, CallbackInfo ci) {
-		Minecraft mc0 = Minecraft.getInstance();
-		if (dev.cvds.feature.Pointer.visible(mc0) && !Debug.blackout()) cvds$overlay(mc0, g -> dev.cvds.feature.Pointer.draw(mc0, g));
+		dev.cvds.feature.Mirror.capture(Minecraft.getInstance()); // before the debug blackout covers the frame
 		if (!Debug.blackout()) return;
 		Minecraft mc = Minecraft.getInstance();
 		int w = mc.getWindow().getGuiScaledWidth(), h = mc.getWindow().getGuiScaledHeight();

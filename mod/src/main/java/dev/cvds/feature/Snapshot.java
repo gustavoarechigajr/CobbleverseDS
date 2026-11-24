@@ -65,7 +65,17 @@ public final class Snapshot {
 		JsonObject o = new JsonObject();
 		boolean inGame = mc.player != null && mc.level != null;
 		o.addProperty("inGame", inGame);
-		if (!inGame) return o;
+		if (!inGame) {
+			// Title screen, world list, loading: the panel mirrors these too.
+			if (mc.screen != null) {
+				JsonObject s = new JsonObject();
+				s.addProperty("kind", "menu");
+				s.addProperty("cls", mc.screen.getClass().getName());
+				s.addProperty("title", mc.screen.getTitle().getString());
+				o.add("screen", s);
+			}
+			return o;
+		}
 
 		JsonObject screen = new JsonObject();
 		String kind;

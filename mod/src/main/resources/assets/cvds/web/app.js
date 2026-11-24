@@ -105,6 +105,7 @@ $$('#tabs button').forEach(b => b.addEventListener('click', () => showTab(b.data
 
 function render() {
   renderStatus();
+  renderScreenpad();
   if (!state || !state.inGame) return;
   const kind = state.screen && state.screen.kind;
   const menuId = state.menu ? state.menu.id : 0;
@@ -119,7 +120,6 @@ function render() {
     if (kind === 'container' && tab === 'craft') loadRecipes();
   }
   battleWatch();
-  renderScreenpad();
   if (tab === 'storage') { renderGrid(); if (netActive() && !net) loadNet(); }
   if (tab === 'party') renderParty();
 }
@@ -1011,6 +1011,7 @@ function renderBattle() {
     $('#b-view').classList.add('hidden');
     $('#b-views').classList.add('hidden');
     $('#b-bag').classList.add('hidden');
+    bagView = 'moves'; bagSel = null; // the next battle opens on its moves
     $('#b-note').textContent = 'Not in a battle. This tab opens by itself when one starts.';
     renderShortcuts();
     return;
@@ -1136,6 +1137,7 @@ function bagCount(e) {
   return `<b>×${e.inv + e.pack}</b>${e.pack ? `<span class="pack">${e.inv ? e.pack + ' in backpack' : 'backpack'}</span>` : ''}`;
 }
 function renderBag() {
+  if (!battle || !battle.active) { $('#b-bag').classList.add('hidden'); return; } // no bag outside a battle
   document.querySelectorAll('#b-views [data-bv]').forEach(b => b.classList.toggle('on', b.dataset.bv === bagView));
   const showMoves = bagView === 'moves';
   $('#b-moves').classList.toggle('hidden', !showMoves);
@@ -1192,7 +1194,7 @@ $('#b-bag').addEventListener('click', e => {
   const bi = e.target.closest('[data-bi]');
   if (bi) { bagSel = bagSel === bi.dataset.bi ? null : bi.dataset.bi; renderBag(); }
 });
-setInterval(() => { if (tab === 'battle' && bagView !== 'moves' && Date.now() - bagLoadedAt > 3000) loadBag(); }, 1000);
+setInterval(() => { if (tab === 'battle' && battle && battle.active && bagView !== 'moves' && Date.now() - bagLoadedAt > 3000) loadBag(); }, 1000);
 $('#b-view').addEventListener('click', async () => {
   await act({ kind: 'battle', op: battle && battle.minimised ? 'show' : 'hide' });
   loadBattle();
@@ -1515,73 +1517,194 @@ $('#map-wps').addEventListener('click', () => {
 });
 setInterval(() => { if (tab === 'map') loadMap(); }, 1000);
 
-// ---------- screen controls: Cobblemon Summary + touchpad for menus the controller can't drive ----------
-// Shown over the tab area for screens the panel has no tab for (containers, PC and battle have their own).
+// ---------- menu mirror: the open menu as a live picture you tap directly ----------
+// Shown over the tab area for menus the panel has no page for (containers, PC and battle have their own).
 let padHidden = false, padScreen = '';
 const PAD_SKIP = /BattleGUI|ChatScreen/;
 function padWanted() {
-  const sc = state && state.inGame && state.screen;
+  const sc = state && state.screen;
   if (!sc) return false;
+  if (!state.inGame) return sc.kind === 'menu';
   return sc.kind === 'summary' || (sc.kind === 'other' && !PAD_SKIP.test(sc.cls || ''));
 }
 function renderScreenpad() {
   const want = padWanted();
   const sc = (state && state.screen) || {};
   const key = want ? (sc.cls || '') : '';
-  if (key !== padScreen) { padScreen = key; padHidden = false; } // a new menu shows the controls again
-  $('#screenpad').classList.toggle('hidden', !want || padHidden);
+  if (key !== padScreen) { padScreen = key; padHidden = false; mir.reset(); } // a new menu: show it, zoom out
+  const showing = want && !padHidden;
+  $('#screenpad').classList.toggle('hidden', !showing);
   $('#sp-show').classList.toggle('hidden', !want || !padHidden);
-  if (!want) return;
-  const sum = sc.kind === 'summary' && sc.summary;
-  $('#sp-summary').classList.toggle('hidden', !sum);
-  $('#sp-title').textContent = sum ? 'Summary' : (sc.title || 'Menu');
-  if (sum) {
-    const names = sum.party || [], n = names.filter(Boolean).length;
-    setHtml('#sum-name', `${esc(names[sum.sel] || '')}<small>${sum.sel + 1}/${n}</small>`);
-    setHtml('#sum-tabs', ['Info', 'Moves', 'Stats', 'Marks'].map((t, i) => `<button data-sumtab="${i}" class="${sum.tab === i ? 'on' : ''}">${t}</button>`).join(''));
-  }
+  $('#sp-title').textContent = sc.kind === 'summary' ? 'Summary' : (sc.title || 'Menu');
+  mir.run(showing);
 }
 async function padSend(body) { try { await api('/api/action', Object.assign({ kind: 'pointer' }, body)); } catch (e) { toast(e.message); } }
-function sumStep(d) {
-  const sum = state.screen.summary, names = sum.party || [];
-  let i = sum.sel;
-  for (let k = 0; k < names.length; k++) { i = (i + d + names.length) % names.length; if (names[i]) break; }
-  act({ kind: 'summary', op: 'select', i });
-}
-$('#sum-prev').addEventListener('click', () => sumStep(-1));
-$('#sum-next').addEventListener('click', () => sumStep(1));
-$('#sum-tabs').addEventListener('click', e => { const b = e.target.closest('[data-sumtab]'); if (b) act({ kind: 'summary', op: 'tab', i: Number(b.dataset.sumtab) }); });
 $('#sp-back').addEventListener('click', () => padSend({ op: 'escape' }));
 $('#sp-hide').addEventListener('click', () => { padHidden = true; renderScreenpad(); });
 $('#sp-show').addEventListener('click', () => { padHidden = false; renderScreenpad(); });
-$$('[data-pad]').forEach(b => b.addEventListener('click', () => {
-  const k = b.dataset.pad;
-  padSend(k === 'click' ? { op: 'click', button: 0 } : k === 'right' ? { op: 'click', button: 1 } : { op: 'scroll', dy: k === 'up' ? 1 : -1 });
-}));
-// Touchpad: relative moves like a laptop trackpad, sent every 40 ms; a short tap clicks.
-(() => {
-  const pad = $('#pad');
-  const GAIN = 0.28; // GUI pixels per panel pixel (about 1:1 on the top screen at GUI scale 3-4)
-  let last = null, start = null, moved = 0, acc = [0, 0], timer = null;
-  const flush = () => { timer = null; if (acc[0] || acc[1]) { const [dx, dy] = acc; acc = [0, 0]; padSend({ op: 'move', dx, dy }); } };
-  pad.addEventListener('pointerdown', e => { last = [e.clientX, e.clientY]; start = Date.now(); moved = 0; pad.classList.add('active'); try { pad.setPointerCapture(e.pointerId); } catch {} });
-  pad.addEventListener('pointermove', e => {
-    if (!last) return;
-    const dx = e.clientX - last[0], dy = e.clientY - last[1];
-    last = [e.clientX, e.clientY];
-    moved += Math.abs(dx) + Math.abs(dy);
-    const speed = Math.min(2.5, 1 + Math.hypot(dx, dy) / 40); // faster swipes travel further
-    acc[0] += dx * GAIN * speed; acc[1] += dy * GAIN * speed;
-    if (!timer) timer = setTimeout(flush, 40);
+
+const mir = (() => {
+  const box = $('#mirror'), img = $('#mir-img');
+  let running = false, seq = 0, url = null, fw = 16, fh = 9, gen = 0;
+  // view: zoom 1 = the whole frame fitted into the box; ox/oy = frame-pixel offset of the top-left corner
+  let zoom = 1, ox = 0, oy = 0;
+  const fit = () => { const r = box.getBoundingClientRect(); return Math.min(r.width / fw, r.height / fh) || 1; };
+  function layout() {
+    const r = box.getBoundingClientRect(), s = fit() * zoom;
+    const vw = r.width / s, vh = r.height / s; // visible frame size
+    ox = Math.max(0, Math.min(ox, fw - vw)); oy = Math.max(0, Math.min(oy, fh - vh));
+    // centre the fitted picture when it's smaller than the box
+    const cx = vw > fw ? (r.width - fw * s) / 2 : -ox * s, cy = vh > fh ? (r.height - fh * s) / 2 : -oy * s;
+    img.style.width = fw + 'px'; img.style.height = fh + 'px';
+    img.style.transform = `translate(${cx}px, ${cy}px) scale(${s})`;
+    const z = $('#mir-zoom');
+    z.classList.toggle('hidden', zoom <= 1.01);
+    z.textContent = `${zoom.toFixed(1)}× · Fit`;
+    return { s, cx, cy };
+  }
+  // box point -> u, v (0..1 of the game screen), or null outside the picture
+  function toUV(px, py) {
+    const { s, cx, cy } = layout();
+    const u = (px - cx) / s / fw, v = (py - cy) / s / fh;
+    return u < 0 || u > 1 || v < 0 || v > 1 ? null : { u, v };
+  }
+  async function loop(g) {
+    while (running && g === gen) {
+      try {
+        const r = await fetch(`/api/mirror?after=${seq}&hi=${zoom > 1.5 ? 1 : 0}`);
+        if (!running || g !== gen) break;
+        if (r.status === 200) {
+          seq = Number(r.headers.get('X-Seq')) || seq + 1;
+          const size = (r.headers.get('X-Size') || '').split('x').map(Number);
+          const blob = await r.blob();
+          const next = URL.createObjectURL(blob);
+          img.onload = () => { if (url) URL.revokeObjectURL(url); url = next; };
+          // keep the view on the same spot when the frame resolution changes (zooming in/out)
+          if (size[0] && size[0] !== fw) { const k = size[0] / fw; ox *= k; oy *= k; fw = size[0]; fh = size[1]; }
+          img.src = next;
+          $('#mir-wait').classList.add('hidden');
+          layout();
+        } else await new Promise(res => setTimeout(res, 300)); // no frame yet
+      } catch { await new Promise(res => setTimeout(res, 500)); }
+    }
+  }
+  function ripple(px, py, right) {
+    const d = document.createElement('div');
+    d.className = 'ripple' + (right ? ' right' : '');
+    d.style.left = px + 'px'; d.style.top = py + 'px';
+    box.appendChild(d);
+    setTimeout(() => d.remove(), 400);
+  }
+  // touch: tap / long-press / drag with one finger; two fingers scroll and pinch-zoom
+  const pts = new Map();
+  let one = null, two = null, lastTap = 0, longTimer = null;
+  const pos = e => { const r = box.getBoundingClientRect(); return [e.clientX - r.left, e.clientY - r.top]; };
+  box.addEventListener('pointerdown', e => {
+    try { box.setPointerCapture(e.pointerId); } catch {}
+    const p = pos(e);
+    pts.set(e.pointerId, p);
+    if (pts.size === 1) {
+      one = { x: p[0], y: p[1], t: Date.now(), dragging: false, long: false };
+      clearTimeout(longTimer);
+      longTimer = setTimeout(() => {
+        if (!one || one.dragging) return;
+        one.long = true;
+        const uv = toUV(one.x, one.y);
+        if (uv) { ripple(one.x, one.y, true); padSend(Object.assign({ op: 'tap', button: 1 }, uv)); }
+      }, 500);
+    } else if (pts.size === 2) {
+      clearTimeout(longTimer);
+      if (one && one.dragging) { const uv = toUV(one.x, one.y) || {}; padSend(Object.assign({ op: 'release' }, uv)); }
+      one = null;
+      const [a, b] = [...pts.values()];
+      two = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), z: zoom, my: (a[1] + b[1]) / 2, mx: (a[0] + b[0]) / 2, acc: 0 };
+    }
   });
-  const end = () => {
-    if (!last) return;
-    pad.classList.remove('active');
-    if (moved < 12 && Date.now() - start < 350) { flush(); padSend({ op: 'click', button: 0 }); }
-    last = null;
+  box.addEventListener('pointermove', e => {
+    if (!pts.has(e.pointerId)) return;
+    const p = pos(e);
+    pts.set(e.pointerId, p);
+    if (two && pts.size >= 2) {
+      const [a, b] = [...pts.values()];
+      const d = Math.hypot(a[0] - b[0], a[1] - b[1]), mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2;
+      if (Math.abs(d - two.d) > 24 || zoom > 1.01) {
+        // pinch: zoom around the fingers' midpoint; while zoomed, two fingers also pan
+        const { s } = layout();
+        const fx = ox + mx / s, fy = oy + my / s;
+        zoom = Math.max(1, Math.min(4, two.z * d / two.d));
+        const s2 = fit() * zoom;
+        ox = fx - mx / s2 - (mx - two.mx) / s2; oy = fy - my / s2 - (my - two.my) / s2;
+        two.mx = mx; two.my = my;
+        layout();
+      } else {
+        // two fingers moving together: scroll the menu (one notch per ~40 px)
+        two.acc += my - two.my; two.my = my;
+        while (Math.abs(two.acc) >= 40) {
+          const dir = two.acc > 0 ? 1 : -1;
+          two.acc -= dir * 40;
+          const uv = toUV(mx, my) || { u: 0.5, v: 0.5 };
+          padSend(Object.assign({ op: 'scroll', dy: dir }, uv));
+        }
+      }
+      return;
+    }
+    if (!one || one.long) return;
+    if (!one.dragging && Math.hypot(p[0] - one.x, p[1] - one.y) > 14) {
+      // start a drag in the game: press where the finger went down
+      one.dragging = true;
+      clearTimeout(longTimer);
+      const uv = toUV(one.x, one.y);
+      if (uv) padSend(Object.assign({ op: 'press', button: 0 }, uv));
+    }
+    if (one.dragging) {
+      const uv = toUV(p[0], p[1]);
+      if (uv) padSend(Object.assign({ op: 'drag' }, uv));
+      one.x = p[0]; one.y = p[1];
+    }
+  });
+  const up = e => {
+    if (!pts.has(e.pointerId)) return;
+    const p = pos(e);
+    pts.delete(e.pointerId);
+    clearTimeout(longTimer);
+    if (pts.size === 0) {
+      if (one && one.dragging) {
+        const uv = toUV(p[0], p[1]) || {};
+        padSend(Object.assign({ op: 'release', button: 0 }, uv));
+      } else if (one && !one.long && Date.now() - one.t < 500) {
+        const now = Date.now();
+        if (now - lastTap < 300 && Math.hypot(p[0] - one.x, p[1] - one.y) < 40) {
+          // double-tap: zoom in 2× on the spot (or back out). The first tap already clicked.
+          const { s } = layout();
+          const fx = ox + p[0] / s, fy = oy + p[1] / s;
+          zoom = zoom > 1.01 ? 1 : 2;
+          const s2 = fit() * zoom;
+          ox = fx - p[0] / s2; oy = fy - p[1] / s2;
+          layout();
+          lastTap = 0;
+        } else {
+          const uv = toUV(p[0], p[1]);
+          if (uv) { ripple(p[0], p[1]); padSend(Object.assign({ op: 'tap', button: 0 }, uv)); }
+          lastTap = now;
+        }
+      }
+      one = null;
+      two = null;
+    }
   };
-  pad.addEventListener('pointerup', end);
-  pad.addEventListener('pointercancel', end);
+  box.addEventListener('pointerup', up);
+  box.addEventListener('pointercancel', up);
+  $('#mir-zoom').addEventListener('click', () => { zoom = 1; ox = oy = 0; layout(); });
+  window.addEventListener('resize', () => layout());
+  return {
+    run(on) {
+      if (on === running) return;
+      running = on;
+      if (on) { gen++; loop(gen); }
+    },
+    reset() { zoom = 1; ox = oy = 0; seq = 0; $('#mir-wait').classList.remove('hidden'); },
+    toUV, layout,
+  };
 })();
 
 // The Android wrapper keeps its window unfocusable so the controller stays with the game;

@@ -137,17 +137,14 @@
       <div id="quick-cmds" class="chips"></div>
       <div class="bar"><input id="chat-input" type="text" placeholder="Chat or /command" autocomplete="off"><button id="chat-send" class="big">Send</button><button id="chat-save">☆</button></div>
     </section>
-    <!-- Screen controls: menus the controller mod can't drive (Cobblemon Summary, Pokédex, map...) -->
-    <section id="screenpad" class="hidden" aria-label="Screen controls">
-      <div class="sp-head"><h2 id="sp-title">Menu</h2><button id="sp-hide">Hide</button><button id="sp-back" class="sp-back">Back / Close</button></div>
-      <div id="sp-summary" class="hidden">
-        <div class="sp-row"><button id="sum-prev" class="nav">◀</button><div id="sum-name"></div><button id="sum-next" class="nav">▶</button></div>
-        <div class="sp-row seg" id="sum-tabs"></div>
-      </div>
-      <div id="pad"><span>Drag to move the cursor · tap to click</span></div>
-      <div class="sp-row"><button data-pad="click">Click</button><button data-pad="right">Right-click</button><button data-pad="up">Scroll ▲</button><button data-pad="down">Scroll ▼</button></div>
+    <!-- Menu mirror: menus the panel has no page for (Pokédex, Summary, mod menus, title screen...), shown here
+         as a live picture you tap directly. -->
+    <section id="screenpad" class="hidden" aria-label="Menu mirror">
+      <div class="sp-head"><h2 id="sp-title">Menu</h2><span id="mir-zoom" class="hidden"></span><button id="sp-hide">Hide</button><button id="sp-back" class="sp-back">Back</button></div>
+      <div id="mirror"><img id="mir-img" alt="" draggable="false"><div id="mir-wait">Opening the menu…</div></div>
+      <div class="note" id="mir-help">Tap = click · hold = right-click · drag = drag · two fingers = scroll · pinch or double-tap = zoom</div>
     </section>
-    <button id="sp-show" class="hidden">Screen controls</button>
+    <button id="sp-show" class="hidden">Show menu</button>
   </main>
 </div>
 <div id="sheet" class="hidden"><div class="panel" role="dialog" aria-modal="true"></div></div>

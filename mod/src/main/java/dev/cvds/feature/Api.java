@@ -32,6 +32,13 @@ public final class Api implements dev.cvds.net.MiniHttpServer.Handler {
 			long wait = Math.min(parseLong(req.query().get("wait"), 1500), 5000);
 			return Response.json(Snapshot.await(since, wait));
 		}
+		if (path.equals("/api/mirror")) {
+			// newest menu frame after ?after=<seq>; ?hi=1 for full resolution (zoomed in)
+			Object[] f = Mirror.await(parseLong(req.query().get("after"), 0), "1".equals(req.query().get("hi")), 1500);
+			if (f == null) return Response.text(204, "text/plain", "");
+			return new Response(200, "image/png", (byte[]) f[0], Map.of("Cache-Control", "no-store", "X-Seq", String.valueOf(f[1]),
+				"X-Size", f[2] + "x" + f[3], "Access-Control-Expose-Headers", "X-Seq, X-Size"));
+		}
 		if (path.startsWith("/api/maptile/")) {
 			// /api/maptile/<dim>/<tx>/<tz>  (dim URL-encoded, e.g. minecraft%3Aoverworld)
 			String[] p = path.substring("/api/maptile/".length()).split("/");

@@ -57,6 +57,7 @@ async function fakeFetch(url, opts) {
   if (u.pathname === '/api/pc') return json({ sig: 's1', open: true, party: st.party.slots, boxes: [{ name: 'Box 1', slots: [{ id: 'p1', name: 'Eevee', species: 'Eevee', lvl: 5, types: ['Normal'], ivs: { HP: 31 }, ivTotal: 31, moves: ['Tackle'] }, ...Array(29).fill({})] }], items: {}, sortModes: ['NAME'] });
   if (u.pathname === '/api/terminal') return json({ sig: 't1', open: true, menu: 5, list: [{ k: 'minecraft:diamond', n: 1234 }], items: { 'minecraft:diamond': { name: 'Diamond', max: 64 } }, free: 10, slots: 54 });
   if (u.pathname === '/api/spawns') return json({ ok: true, items: {}, buckets: [{ bucket: 'common', list: [{ name: 'Pidgey', pct: 40, dex: 16, dexState: 'CAUGHT', types: 'normal/flying' }, { name: 'Rattata', pct: 35, dex: 19, dexState: 'NONE' }] }, { bucket: 'ultra-rare', list: [] }] });
+  if (u.pathname === '/api/mirror') return { ok: true, status: 204, headers: { get: () => null }, json: async () => ({}) };
   if (u.pathname === '/api/map') return json({ ok: true, dim: 'minecraft:overworld', mappable: true, x: 0, z: 0, yaw: 0, tile: 256, tiles: [], xaero: true,
     waypoints: [{ i: 0, name: 'Home', initials: 'H', x: 100, y: 64, z: 100 }], mons: [{ name: 'Pidgey', lvl: 4, x: -30, z: 0, wild: true, shiny: false }] });
   if (u.pathname === '/api/bag') {
@@ -246,8 +247,12 @@ const activeTab = () => ($('#tabs button.on') || {}).dataset?.tab;
   $('#b-views [data-bv="moves"]').click(); await sleep(50);
   check(!$('#b-moves').classList.contains('hidden'), 'Moves view comes back');
 
+  $('#b-views [data-bv="balls"]').click(); await sleep(100);
   setState('none'); await sleep(300);
   check(activeTab() === 'pc', 'battle end returns to the previous tab');
+  w.__t.showTab('battle'); await sleep(3500);
+  check($('#b-bag').classList.contains('hidden') && $('#b-views').classList.contains('hidden'), 'outside a battle the Bag/Poké Balls view stays hidden (no flicker)');
+  w.__t.showTab('pc'); await sleep(100);
 
   w.__t.showTab('storage');
   setState('terminal'); await sleep(1000);
@@ -277,27 +282,27 @@ const activeTab = () => ($('#tabs button.on') || {}).dataset?.tab;
   $('#sheet .close').click();
   w.__t.showTab('storage'); await sleep(100);
 
-  // screen controls: Cobblemon Summary + touchpad
-  st = Object.assign(STATES.none(), { screen: { kind: 'summary', cls: 'com.cobblemon.mod.common.client.gui.summary.Summary', title: '',
-    summary: { tab: 1, side: 0, sel: 0, party: ['Pikachu', 'Vulpix', '', '', '', ''] } } }); rev++;
+  // menu mirror: menus with no panel page show as a picture you tap directly
+  st = Object.assign(STATES.none(), { screen: { kind: 'summary', cls: 'com.cobblemon.mod.common.client.gui.summary.Summary', title: 'Summary',
+    summary: { tab: 1, side: 0, sel: 0, party: ['Pikachu'] } } }); rev++;
   await sleep(400);
-  check(!$('#screenpad').classList.contains('hidden') && $('#sum-name').textContent.includes('Pikachu'), 'Summary open shows the screen controls');
-  check($('#sum-tabs [data-sumtab="1"]').classList.contains('on'), 'the open Summary page is highlighted');
+  check(!$('#screenpad').classList.contains('hidden') && $('#sp-title').textContent === 'Summary', 'a menu with no panel page opens the mirror');
+  check(!$('#pad') && !$('#sum-next'), 'the touchpad and its cursor controls are gone');
   actions.length = 0;
-  $('#sum-next').click(); await sleep(50);
-  $('#sum-tabs [data-sumtab="2"]').click(); await sleep(50);
+  tap($('#mirror')); await sleep(80);
+  const t1 = actions.find(a => a.kind === 'pointer' && a.op === 'tap');
+  check(t1 && t1.button === 0 && t1.u >= 0 && t1.u <= 1 && t1.v >= 0 && t1.v <= 1, 'tapping the picture clicks at that spot (u, v)');
+  actions.length = 0;
   $('#sp-back').click(); await sleep(50);
-  check(actions.some(a => a.kind === 'summary' && a.op === 'select' && a.i === 1), 'Next ▶ selects the next Pokémon');
-  check(actions.some(a => a.kind === 'summary' && a.op === 'tab' && a.i === 2), 'page keys switch the Summary page');
-  check(actions.some(a => a.kind === 'pointer' && a.op === 'escape'), 'Back / Close sends Esc');
-  actions.length = 0;
-  tap($('#pad')); await sleep(100);
-  check(actions.some(a => a.kind === 'pointer' && a.op === 'click'), 'tapping the touchpad clicks');
+  check(actions.some(a => a.kind === 'pointer' && a.op === 'escape'), 'Back sends Esc');
   $('#sp-hide').click(); await sleep(50);
-  check($('#screenpad').classList.contains('hidden') && !$('#sp-show').classList.contains('hidden'), 'Hide tucks the controls into a button');
+  check($('#screenpad').classList.contains('hidden') && !$('#sp-show').classList.contains('hidden'), 'Hide tucks the mirror into a button');
   st = Object.assign(STATES.none(), { screen: { kind: 'other', cls: 'com.cobblemon.mod.common.client.gui.battle.BattleGUI', title: '' } }); rev++;
   await sleep(400);
-  check($('#screenpad').classList.contains('hidden') && $('#sp-show').classList.contains('hidden'), 'no screen controls over the battle screen');
+  check($('#screenpad').classList.contains('hidden') && $('#sp-show').classList.contains('hidden'), 'no mirror over the battle screen');
+  st = { inGame: false, screen: { kind: 'menu', cls: 'net.minecraft.class_442', title: 'Title screen' } }; rev++;
+  await sleep(400);
+  check(!$('#screenpad').classList.contains('hidden'), 'the mirror also works outside a world (title screen)');
   setState('none'); await sleep(300);
 
   // idle blackout
