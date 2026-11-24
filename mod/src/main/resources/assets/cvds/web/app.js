@@ -1602,9 +1602,7 @@ function pkRender() {
         <div>Species<b>${esc(d.species)}${d.dex ? ' #' + d.dex : ''}</b></div><div>Nature<b>${esc(d.nature || '—')}</b></div>
         <div>Ability<b>${esc(d.ability || '—')}</b></div><div>Held item<b>${esc(d.held || 'Nothing')}</b></div></div>
       <div class="pk-h">Nickname</div>
-      <div class="pk-rename"><input id="pk-nick" type="text" maxlength="12" placeholder="${esc(d.species)}" value="${esc(d.nickname || '')}" autocomplete="off"><button id="pk-save">Save</button></div>
-      <div class="pk-h">Party slot</div>
-      <div class="pk-slots">${[0, 1, 2, 3, 4, 5].map(i => `<button data-pkslot="${i}" class="${i === pk.slot ? 'on' : ''}">${i + 1}<small>${esc((names[i] || '—').slice(0, 7))}</small></button>`).join('')}</div>`;
+      <div class="pk-rename"><input id="pk-nick" type="text" maxlength="12" placeholder="${esc(d.species)}" value="${esc(d.nickname || '')}" autocomplete="off"><button id="pk-save">Save</button></div>`;
   }
 }
 $('#pk-prev').addEventListener('click', () => pkStep(-1));
@@ -1634,11 +1632,6 @@ $('#pk-body').addEventListener('click', e => {
     return;
   }
   if (e.target.closest('#pk-save')) { pkAct({ op: 'rename', name: $('#pk-nick').value }, $('#pk-nick').value.trim() ? 'Renamed' : 'Nickname cleared'); return; }
-  const sl = e.target.closest('[data-pkslot]');
-  if (sl && Number(sl.dataset.pkslot) !== pk.slot) {
-    const to = Number(sl.dataset.pkslot);
-    partyMove(pk.slot, to).then(() => { pk.slot = to; pkLoad(); });
-  }
 });
 setInterval(() => { if (pk.open && !pk.busy && document.activeElement !== $('#pk-nick')) pkLoad(); }, 2500);
 
