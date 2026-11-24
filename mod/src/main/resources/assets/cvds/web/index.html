@@ -21,6 +21,7 @@
     <button data-tab="pc"><img class="ti" src="/api/icon/cobblemon%3Apc" alt="" onload="this.parentNode.classList.add('img')" onerror="this.remove()"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 2h14v9H1zM3 4h10v5H3zM6 12h4v1H6zM4 13h8v2H4z"/></svg><span>PC</span></button>
     <button data-tab="battle"><img class="ti" src="/api/icon/minecraft%3Adiamond_sword" alt="" onload="this.parentNode.classList.add('img')" onerror="this.remove()"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9 1h4l-3 5h3l-6 9 1-6H5z"/></svg><span>Battle</span></button>
     <button data-tab="spawns"><img class="ti" src="/api/icon/minecraft%3Ashort_grass" alt="" onload="this.parentNode.classList.add('img')" onerror="this.remove()"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 14h12v1H2zM3 9h2v5H3zM6 6h2v8H6zM9 8h2v6H9zM12 10h1v4h-1zM4 7h1v2H4zM8 4h1v2H8zM11 6h1v2h-1z"/></svg><span>Spawns</span></button>
+    <button data-tab="map"><img class="ti" src="/api/icon/minecraft%3Afilled_map" alt="" onload="this.parentNode.classList.add('img')" onerror="this.remove()"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 3l4-2 6 2 4-2v12l-4 2-6-2-4 2zM5 3v10M11 5v10"/></svg><span>Map</span></button>
     <button data-tab="chat"><img class="ti" src="/api/icon/minecraft%3Awritable_book" alt="" onload="this.parentNode.classList.add('img')" onerror="this.remove()"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 2h14v9H7l-4 3v-3H1zM4 5h8v1H4zM4 7h6v1H4z"/></svg><span>Chat</span></button>
   </nav>
   <main>
@@ -119,11 +120,34 @@
       </div>
       <div id="sp-list"></div>
     </section>
+    <section id="tab-map" class="tab">
+      <div id="map-wrap">
+        <canvas id="map-canvas"></canvas>
+        <div id="map-tools">
+          <button id="map-me">Center on me</button>
+          <button id="map-wps">Waypoints</button>
+          <button id="map-in" class="nav">+</button>
+          <button id="map-out" class="nav">−</button>
+        </div>
+        <div id="map-info" class="note"></div>
+      </div>
+    </section>
     <section id="tab-chat" class="tab">
       <div id="chat-log"></div>
       <div id="quick-cmds" class="chips"></div>
       <div class="bar"><input id="chat-input" type="text" placeholder="Chat or /command" autocomplete="off"><button id="chat-send" class="big">Send</button><button id="chat-save">☆</button></div>
     </section>
+    <!-- Screen controls: menus the controller mod can't drive (Cobblemon Summary, Pokédex, map...) -->
+    <section id="screenpad" class="hidden" aria-label="Screen controls">
+      <div class="sp-head"><h2 id="sp-title">Menu</h2><button id="sp-hide">Hide</button><button id="sp-back" class="sp-back">Back / Close</button></div>
+      <div id="sp-summary" class="hidden">
+        <div class="sp-row"><button id="sum-prev" class="nav">◀</button><div id="sum-name"></div><button id="sum-next" class="nav">▶</button></div>
+        <div class="sp-row seg" id="sum-tabs"></div>
+      </div>
+      <div id="pad"><span>Drag to move the cursor · tap to click</span></div>
+      <div class="sp-row"><button data-pad="click">Click</button><button data-pad="right">Right-click</button><button data-pad="up">Scroll ▲</button><button data-pad="down">Scroll ▼</button></div>
+    </section>
+    <button id="sp-show" class="hidden">Screen controls</button>
   </main>
 </div>
 <div id="sheet" class="hidden"><div class="panel" role="dialog" aria-modal="true"></div></div>

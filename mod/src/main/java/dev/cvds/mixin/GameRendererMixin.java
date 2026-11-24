@@ -19,6 +19,8 @@ import org.spongepowered.asm.mixin.injection.callback.CallbackInfo;
 public abstract class GameRendererMixin {
 	@Inject(method = "render", at = @At("TAIL"))
 	private void cvds$blackout(DeltaTracker delta, boolean renderLevel, CallbackInfo ci) {
+		Minecraft mc0 = Minecraft.getInstance();
+		if (dev.cvds.feature.Pointer.visible(mc0) && !Debug.blackout()) cvds$overlay(mc0, g -> dev.cvds.feature.Pointer.draw(mc0, g));
 		if (!Debug.blackout()) return;
 		Minecraft mc = Minecraft.getInstance();
 		int w = mc.getWindow().getGuiScaledWidth(), h = mc.getWindow().getGuiScaledHeight();
@@ -33,6 +35,26 @@ public abstract class GameRendererMixin {
 		RenderSystem.disableDepthTest();
 		GuiGraphics g = new GuiGraphics(mc, mc.renderBuffers().bufferSource());
 		g.fill(-10, -10, w + 10, h + 10, 0xFF000000);
+		g.flush();
+		RenderSystem.enableDepthTest();
+		mv.popMatrix();
+		RenderSystem.applyModelViewMatrix();
+		RenderSystem.restoreProjectionMatrix();
+	}
+
+	/** Draws on top of the finished frame in GUI coordinates (the HUD pass has popped its matrices). */
+	private static void cvds$overlay(Minecraft mc, java.util.function.Consumer<GuiGraphics> draw) {
+		int w = mc.getWindow().getGuiScaledWidth(), h = mc.getWindow().getGuiScaledHeight();
+		RenderSystem.backupProjectionMatrix();
+		RenderSystem.setProjectionMatrix(new Matrix4f().setOrtho(0, w, h, 0, 1000, 21000), VertexSorting.ORTHOGRAPHIC_Z);
+		Matrix4fStack mv = RenderSystem.getModelViewStack();
+		mv.pushMatrix();
+		mv.identity();
+		mv.translate(0, 0, -11000);
+		RenderSystem.applyModelViewMatrix();
+		RenderSystem.disableDepthTest();
+		GuiGraphics g = new GuiGraphics(mc, mc.renderBuffers().bufferSource());
+		draw.accept(g);
 		g.flush();
 		RenderSystem.enableDepthTest();
 		mv.popMatrix();

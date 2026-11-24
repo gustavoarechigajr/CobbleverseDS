@@ -98,6 +98,7 @@ function showTab(name) {
   if (name === 'pc') { pcSig = ''; loadPc(); }
   if (name === 'battle') loadBattle();
   if (name === 'spawns') { loadSpawns.last = Date.now(); loadSpawns(); }
+  if (name === 'map') loadMap();
   render();
 }
 $$('#tabs button').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
@@ -118,6 +119,7 @@ function render() {
     if (kind === 'container' && tab === 'craft') loadRecipes();
   }
   battleWatch();
+  renderScreenpad();
   if (tab === 'storage') { renderGrid(); if (netActive() && !net) loadNet(); }
   if (tab === 'party') renderParty();
 }
@@ -1351,7 +1353,7 @@ setInterval(() => { if (!keys.length && state && state.inGame) loadKeys(); }, 30
   const order = () => $$('#tabs [data-tab]').map(b => b.dataset.tab);
   let sx = 0, sy = 0, t0 = 0, ok = false;
   $('main').addEventListener('pointerdown', e => {
-    ok = !e.target.closest('.slot, .pk, .mon, .ni, .mv, button, input, select, #grid, #pc-main, #net-grid, #chat-log');
+    ok = !e.target.closest('.slot, .pk, .mon, .ni, .mv, button, input, select, #grid, #pc-main, #net-grid, #chat-log, #map-canvas');
     sx = e.clientX; sy = e.clientY; t0 = Date.now();
   });
   $('main').addEventListener('pointerup', e => {
@@ -1362,6 +1364,224 @@ setInterval(() => { if (!keys.length && state && state.inGame) loadKeys(); }, 30
     const next = o[(i + (dx < 0 ? 1 : -1) + o.length) % o.length];
     showTab(next);
   });
+})();
+
+// ---------- map: explored terrain drawn by the mod, Xaero waypoints, nearby Pokémon ----------
+let map = null, mapView = { cx: 0, cz: 0, scale: 2 }, mapFollow = true, mapTimer = null;
+const mapImgs = new Map(); // "dim|tx|tz" -> { ver, img }
+const MAP_MIN = 0.25, MAP_MAX = 10;
+async function loadMap() {
+  try { map = await api('/api/map'); } catch (e) { $('#map-info').textContent = e.message; return; }
+  if (mapFollow) { mapView.cx = map.x; mapView.cz = map.z; }
+  drawMap();
+}
+function mapToScreen(x, z, c) { return [c.width / 2 + (x - mapView.cx) * mapView.scale, c.height / 2 + (z - mapView.cz) * mapView.scale]; }
+function screenToMap(sx, sy, c) { return [mapView.cx + (sx - c.width / 2) / mapView.scale, mapView.cz + (sy - c.height / 2) / mapView.scale]; }
+function tileImg(t) {
+  const k = `${map.dim}|${t[0]}|${t[1]}`, e = mapImgs.get(k);
+  if (e && e.ver === t[2]) return e.img.complete && e.img.naturalWidth ? e.img : null;
+  const img = new Image();
+  img.onload = () => drawMap();
+  img.src = `/api/maptile/${encodeURIComponent(map.dim)}/${t[0]}/${t[1]}?v=${t[2]}`;
+  // keep showing the old picture until the new one arrives
+  mapImgs.set(k, { ver: t[2], img, old: e && e.img });
+  return e && e.img && e.img.complete ? e.img : null;
+}
+const monImgs = new Map();
+function monImg(k) {
+  if (!monImgs.has(k)) { const i = new Image(); i.onload = () => drawMap(); i.src = iconUrl(k); monImgs.set(k, i); }
+  const i = monImgs.get(k);
+  return i.complete && i.naturalWidth ? i : null;
+}
+function drawMap() {
+  const c = $('#map-canvas');
+  if (tab !== 'map' || !map) return;
+  const w = c.clientWidth, h = c.clientHeight;
+  if (c.width !== w || c.height !== h) { c.width = w; c.height = h; }
+  const g = c.getContext && c.getContext('2d');
+  if (!g) return;
+  g.fillStyle = '#15171a'; g.fillRect(0, 0, w, h);
+  g.imageSmoothingEnabled = false;
+  const T = map.tile, s = mapView.scale;
+  const [x0, z0] = screenToMap(0, 0, c), [x1, z1] = screenToMap(w, h, c);
+  for (const t of map.tiles || []) {
+    if ((t[0] + 1) * T < x0 || t[0] * T > x1 || (t[1] + 1) * T < z0 || t[1] * T > z1) continue;
+    const img = tileImg(t);
+    if (!img) continue;
+    const [sx, sy] = mapToScreen(t[0] * T, t[1] * T, c);
+    g.drawImage(img, Math.floor(sx), Math.floor(sy), Math.ceil(T * s), Math.ceil(T * s));
+  }
+  // nearby Pokémon
+  for (const m of map.mons || []) {
+    const [sx, sy] = mapToScreen(m.x, m.z, c), r = 26;
+    g.beginPath(); g.arc(sx, sy, r, 0, Math.PI * 2);
+    g.fillStyle = 'rgba(246,247,249,.92)'; g.fill();
+    g.lineWidth = 4; g.strokeStyle = m.shiny ? '#ffc61a' : m.wild ? '#e0402f' : '#2e8fe0'; g.stroke();
+    const img = m.k && monImg(m.k);
+    if (img) g.drawImage(img, sx - r + 3, sy - r + 3, r * 2 - 6, r * 2 - 6);
+  }
+  // waypoints
+  g.font = '800 22px Nunito, sans-serif'; g.textAlign = 'center';
+  for (const wp of map.waypoints || []) {
+    const [sx, sy] = mapToScreen(wp.x + 0.5, wp.z + 0.5, c);
+    g.save(); g.translate(sx, sy); g.rotate(Math.PI / 4);
+    g.fillStyle = '#ffc61a'; g.strokeStyle = '#141414'; g.lineWidth = 4;
+    g.fillRect(-14, -14, 28, 28); g.strokeRect(-14, -14, 28, 28); g.restore();
+    g.lineWidth = 5; g.strokeStyle = '#141414'; g.strokeText(wp.name, sx, sy - 30);
+    g.fillStyle = '#ffffff'; g.fillText(wp.name, sx, sy - 30);
+  }
+  // you: an arrow pointing where you look (yaw 0 = south / +z)
+  const [px, py] = mapToScreen(map.x, map.z, c), yaw = map.yaw * Math.PI / 180;
+  g.save(); g.translate(px, py); g.rotate(yaw + Math.PI);
+  g.beginPath(); g.moveTo(0, -26); g.lineTo(18, 20); g.lineTo(0, 10); g.lineTo(-18, 20); g.closePath();
+  g.fillStyle = '#ffffff'; g.fill(); g.lineWidth = 5; g.strokeStyle = '#e0402f'; g.stroke(); g.restore();
+  $('#map-info').textContent = map.mappable ? `${Math.floor(map.x)}, ${Math.floor(map.z)} · ${(map.tiles || []).length ? 'tap the map for options' : 'walk around to draw the map'}` :
+    'This dimension has a roof: the map draws the Overworld and other open dimensions.';
+}
+function mapZoom(f, ax, ay) {
+  const c = $('#map-canvas');
+  const [wx, wz] = screenToMap(ax == null ? c.width / 2 : ax, ay == null ? c.height / 2 : ay, c);
+  mapView.scale = Math.max(MAP_MIN, Math.min(MAP_MAX, mapView.scale * f));
+  if (ax != null) { mapView.cx = wx - (ax - c.width / 2) / mapView.scale; mapView.cz = wz - (ay - c.height / 2) / mapView.scale; }
+  drawMap();
+}
+function waypointSheet(wp) {
+  const d = map ? Math.round(Math.hypot(wp.x - map.x, wp.z - map.z)) : 0;
+  sheet(wp.name, `${wp.x}, ${wp.y}, ${wp.z} · ${d} blocks away`, [
+    { label: 'Center on it', run: () => { mapFollow = false; mapView.cx = wp.x; mapView.cz = wp.z; drawMap(); } },
+    { label: 'Teleport there', sub: 'needs cheats', run: () => mapAct({ op: 'teleport', x: wp.x, y: wp.y, z: wp.z }, 'Teleport sent') },
+    { label: 'Delete', cls: 'danger', run: () => mapAct({ op: 'removeWaypoint', i: wp.i }, `Deleted ${wp.name}`) },
+  ]);
+}
+async function mapAct(body, done) {
+  try { await api('/api/action', Object.assign({ kind: 'map' }, body)); toast(done, true); } catch (e) { toast(e.message); }
+  loadMap();
+}
+function mapTap(sx, sy) {
+  const c = $('#map-canvas');
+  const near = (x, z) => { const [a, b] = mapToScreen(x, z, c); return Math.hypot(a - sx, b - sy) < 34; };
+  const wp = (map.waypoints || []).find(w => near(w.x + 0.5, w.z + 0.5));
+  if (wp) return waypointSheet(wp);
+  const mon = (map.mons || []).find(m => near(m.x, m.z));
+  if (mon) return toast(`${mon.name} Lv ${mon.lvl}${mon.shiny ? ' ★' : ''}${mon.wild ? ' · wild' : ''}`, true);
+  const [x, z] = screenToMap(sx, sy, c).map(Math.floor);
+  const n = (map.waypoints || []).length + 1;
+  sheet(`${x}, ${z}`, `${Math.round(Math.hypot(x - map.x, z - map.z))} blocks from you`, [
+    { label: 'Add waypoint here', sub: map.xaero ? 'saved in Xaero’s Minimap' : 'needs Xaero’s Minimap', disabled: !map.xaero, run: () => mapAct({ op: 'addWaypoint', x, z, name: `Waypoint ${n}` }, `Added Waypoint ${n}`) },
+    { label: 'Teleport here', sub: 'needs cheats', run: () => mapAct({ op: 'teleport', x, z }, 'Teleport sent') },
+  ]);
+}
+(() => {
+  const c = $('#map-canvas'), pts = new Map();
+  let start = null, pinch = null, moved = 0;
+  c.addEventListener('pointerdown', e => {
+    try { c.setPointerCapture(e.pointerId); } catch {}
+    pts.set(e.pointerId, [e.offsetX, e.offsetY]);
+    if (pts.size === 1) { start = { x: e.offsetX, y: e.offsetY, t: Date.now() }; moved = 0; }
+    if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = { d: Math.hypot(a[0] - b[0], a[1] - b[1]), s: mapView.scale }; }
+  });
+  c.addEventListener('pointermove', e => {
+    if (!pts.has(e.pointerId)) return;
+    const prev = pts.get(e.pointerId);
+    pts.set(e.pointerId, [e.offsetX, e.offsetY]);
+    if (pts.size >= 2 && pinch) {
+      const [a, b] = [...pts.values()], d = Math.hypot(a[0] - b[0], a[1] - b[1]);
+      const f = (pinch.s * d / pinch.d) / mapView.scale;
+      mapZoom(f, (a[0] + b[0]) / 2, (a[1] + b[1]) / 2);
+      moved += 99;
+      return;
+    }
+    const dx = e.offsetX - prev[0], dy = e.offsetY - prev[1];
+    moved += Math.abs(dx) + Math.abs(dy);
+    if (moved > 8) { mapFollow = false; mapView.cx -= dx / mapView.scale; mapView.cz -= dy / mapView.scale; drawMap(); }
+  });
+  const up = e => {
+    pts.delete(e.pointerId);
+    if (pts.size < 2) pinch = null;
+    if (pts.size === 0 && start && moved < 10 && Date.now() - start.t < 400 && map) mapTap(start.x, start.y);
+    if (pts.size === 0) start = null;
+  };
+  c.addEventListener('pointerup', up);
+  c.addEventListener('pointercancel', up);
+  c.addEventListener('wheel', e => { e.preventDefault(); mapZoom(e.deltaY < 0 ? 1.25 : 0.8, e.offsetX, e.offsetY); }, { passive: false });
+})();
+$('#map-me').addEventListener('click', () => { mapFollow = true; if (map) { mapView.cx = map.x; mapView.cz = map.z; } drawMap(); });
+$('#map-in').addEventListener('click', () => mapZoom(1.5));
+$('#map-out').addEventListener('click', () => mapZoom(1 / 1.5));
+$('#map-wps').addEventListener('click', () => {
+  const wps = (map && map.waypoints) || [];
+  if (!wps.length) return toast(map && map.xaero ? 'No waypoints yet: tap the map to add one' : 'Waypoints need Xaero’s Minimap', true);
+  sheet('Waypoints', null, wps.map(wp => ({ label: wp.name, sub: `${Math.round(Math.hypot(wp.x - map.x, wp.z - map.z))} blocks · ${wp.x}, ${wp.z}`, run: () => waypointSheet(wp) })));
+});
+setInterval(() => { if (tab === 'map') loadMap(); }, 1000);
+
+// ---------- screen controls: Cobblemon Summary + touchpad for menus the controller can't drive ----------
+// Shown over the tab area for screens the panel has no tab for (containers, PC and battle have their own).
+let padHidden = false, padScreen = '';
+const PAD_SKIP = /BattleGUI|ChatScreen/;
+function padWanted() {
+  const sc = state && state.inGame && state.screen;
+  if (!sc) return false;
+  return sc.kind === 'summary' || (sc.kind === 'other' && !PAD_SKIP.test(sc.cls || ''));
+}
+function renderScreenpad() {
+  const want = padWanted();
+  const sc = (state && state.screen) || {};
+  const key = want ? (sc.cls || '') : '';
+  if (key !== padScreen) { padScreen = key; padHidden = false; } // a new menu shows the controls again
+  $('#screenpad').classList.toggle('hidden', !want || padHidden);
+  $('#sp-show').classList.toggle('hidden', !want || !padHidden);
+  if (!want) return;
+  const sum = sc.kind === 'summary' && sc.summary;
+  $('#sp-summary').classList.toggle('hidden', !sum);
+  $('#sp-title').textContent = sum ? 'Summary' : (sc.title || 'Menu');
+  if (sum) {
+    const names = sum.party || [], n = names.filter(Boolean).length;
+    setHtml('#sum-name', `${esc(names[sum.sel] || '')}<small>${sum.sel + 1}/${n}</small>`);
+    setHtml('#sum-tabs', ['Info', 'Moves', 'Stats', 'Marks'].map((t, i) => `<button data-sumtab="${i}" class="${sum.tab === i ? 'on' : ''}">${t}</button>`).join(''));
+  }
+}
+async function padSend(body) { try { await api('/api/action', Object.assign({ kind: 'pointer' }, body)); } catch (e) { toast(e.message); } }
+function sumStep(d) {
+  const sum = state.screen.summary, names = sum.party || [];
+  let i = sum.sel;
+  for (let k = 0; k < names.length; k++) { i = (i + d + names.length) % names.length; if (names[i]) break; }
+  act({ kind: 'summary', op: 'select', i });
+}
+$('#sum-prev').addEventListener('click', () => sumStep(-1));
+$('#sum-next').addEventListener('click', () => sumStep(1));
+$('#sum-tabs').addEventListener('click', e => { const b = e.target.closest('[data-sumtab]'); if (b) act({ kind: 'summary', op: 'tab', i: Number(b.dataset.sumtab) }); });
+$('#sp-back').addEventListener('click', () => padSend({ op: 'escape' }));
+$('#sp-hide').addEventListener('click', () => { padHidden = true; renderScreenpad(); });
+$('#sp-show').addEventListener('click', () => { padHidden = false; renderScreenpad(); });
+$$('[data-pad]').forEach(b => b.addEventListener('click', () => {
+  const k = b.dataset.pad;
+  padSend(k === 'click' ? { op: 'click', button: 0 } : k === 'right' ? { op: 'click', button: 1 } : { op: 'scroll', dy: k === 'up' ? 1 : -1 });
+}));
+// Touchpad: relative moves like a laptop trackpad, sent every 40 ms; a short tap clicks.
+(() => {
+  const pad = $('#pad');
+  const GAIN = 0.55; // GUI pixels per panel pixel
+  let last = null, start = null, moved = 0, acc = [0, 0], timer = null;
+  const flush = () => { timer = null; if (acc[0] || acc[1]) { const [dx, dy] = acc; acc = [0, 0]; padSend({ op: 'move', dx, dy }); } };
+  pad.addEventListener('pointerdown', e => { last = [e.clientX, e.clientY]; start = Date.now(); moved = 0; pad.classList.add('active'); try { pad.setPointerCapture(e.pointerId); } catch {} });
+  pad.addEventListener('pointermove', e => {
+    if (!last) return;
+    const dx = e.clientX - last[0], dy = e.clientY - last[1];
+    last = [e.clientX, e.clientY];
+    moved += Math.abs(dx) + Math.abs(dy);
+    const speed = Math.min(3, 1 + Math.hypot(dx, dy) / 25); // faster swipes travel further
+    acc[0] += dx * GAIN * speed; acc[1] += dy * GAIN * speed;
+    if (!timer) timer = setTimeout(flush, 40);
+  });
+  const end = () => {
+    if (!last) return;
+    pad.classList.remove('active');
+    if (moved < 12 && Date.now() - start < 350) { flush(); padSend({ op: 'click', button: 0 }); }
+    last = null;
+  };
+  pad.addEventListener('pointerup', end);
+  pad.addEventListener('pointercancel', end);
 })();
 
 // The Android wrapper keeps its window unfocusable so the controller stays with the game;

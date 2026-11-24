@@ -32,6 +32,14 @@ public final class Api implements dev.cvds.net.MiniHttpServer.Handler {
 			long wait = Math.min(parseLong(req.query().get("wait"), 1500), 5000);
 			return Response.json(Snapshot.await(since, wait));
 		}
+		if (path.startsWith("/api/maptile/")) {
+			// /api/maptile/<dim>/<tx>/<tz>  (dim URL-encoded, e.g. minecraft%3Aoverworld)
+			String[] p = path.substring("/api/maptile/".length()).split("/");
+			if (p.length != 3) return Response.notFound();
+			String dim = java.net.URLDecoder.decode(p[0], java.nio.charset.StandardCharsets.UTF_8);
+			byte[] png = MapTiles.png(dim, Integer.parseInt(p[1]), Integer.parseInt(p[2]));
+			return png == null ? Response.notFound() : new Response(200, "image/png", png, Map.of("Cache-Control", "no-cache"));
+		}
 		if (path.startsWith("/api/icon/")) {
 			byte[] png = Icons.get(path.substring("/api/icon/".length()), 3000);
 			return png == null ? Response.notFound() : new Response(200, "image/png", png, Map.of("Cache-Control", "max-age=86400"));
@@ -83,6 +91,7 @@ public final class Api implements dev.cvds.net.MiniHttpServer.Handler {
 					return Response.json(BattleBag.act(mc, JsonParser.parseString(req.bodyText()).getAsJsonObject()).toString());
 				return Response.json(BattleBag.list(mc).toString());
 			}
+			case "/api/map": return onClient(mc, () -> MapApi.info(mc));
 			case "/api/recipes": {
 				String q = req.query().getOrDefault("q", "");
 				Set<String> favs = new HashSet<>();
@@ -121,6 +130,9 @@ public final class Api implements dev.cvds.net.MiniHttpServer.Handler {
 			case "terminal" -> Snapshot.TOMS ? Terminal.take(mc, a.get("k").getAsString(), a.has("one") && a.get("one").getAsBoolean()) : error("Tom's Simple Storage not installed");
 			case "battle" -> Snapshot.COBBLEMON ? Battle.choose(mc, a) : error("cobblemon not installed");
 			case "pc" -> Snapshot.COBBLEMON ? Pc.action(mc, a) : error("cobblemon not installed");
+			case "summary" -> Snapshot.COBBLEMON ? Screens.act(mc, a) : error("cobblemon not installed");
+			case "pointer" -> Pointer.act(mc, a);
+			case "map" -> { try { yield MapApi.act(mc, a); } catch (Exception e) { yield error(e.getClass().getSimpleName() + ": " + e.getMessage()); } }
 			case "hotbarSelect" -> {
 				int s = a.get("slot").getAsInt();
 				if (s < 0 || s > 8) yield error("0-8");

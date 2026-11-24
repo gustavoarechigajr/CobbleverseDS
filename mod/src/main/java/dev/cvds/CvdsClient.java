@@ -20,9 +20,11 @@ public final class CvdsClient implements ClientModInitializer {
 			Keys.tick();
 			Snapshot.tick(mc);
 			Icons.tick(mc);
+			MapTiles.tick(mc);
 			if (config.debug) Debug.tick(mc);
 			if (Snapshot.TOMS) TerminalTick.tick(mc);
 		});
+		net.fabricmc.fabric.api.client.event.lifecycle.v1.ClientChunkEvents.CHUNK_LOAD.register(MapTiles::onChunkLoad);
 		try {
 			server = new MiniHttpServer(InetAddress.getLoopbackAddress(), config.port, new Api());
 			LOG.info("cvds: companion UI at http://127.0.0.1:{}/ (debug={})", server.port(), config.debug);

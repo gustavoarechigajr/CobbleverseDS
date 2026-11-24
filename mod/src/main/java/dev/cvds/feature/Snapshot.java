@@ -74,6 +74,10 @@ public final class Snapshot {
 		else if (mc.screen instanceof AbstractContainerScreen<?>) kind = "container";
 		else kind = "other";
 		if (COBBLEMON && "other".equals(kind) && PcScreen.isPc(mc.screen)) kind = "pc";
+		if (COBBLEMON && "other".equals(kind) && Screens.isSummary(mc.screen)) {
+			kind = "summary";
+			screen.add("summary", Screens.summary((com.cobblemon.mod.common.client.gui.summary.Summary) mc.screen));
+		}
 		screen.addProperty("kind", kind);
 		if (TOMS && Terminal.open(mc)) screen.addProperty("terminal", true);
 		if (mc.screen != null) {

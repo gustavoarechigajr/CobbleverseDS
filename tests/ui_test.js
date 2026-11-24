@@ -57,6 +57,8 @@ async function fakeFetch(url, opts) {
   if (u.pathname === '/api/pc') return json({ sig: 's1', open: true, party: st.party.slots, boxes: [{ name: 'Box 1', slots: [{ id: 'p1', name: 'Eevee', species: 'Eevee', lvl: 5, types: ['Normal'], ivs: { HP: 31 }, ivTotal: 31, moves: ['Tackle'] }, ...Array(29).fill({})] }], items: {}, sortModes: ['NAME'] });
   if (u.pathname === '/api/terminal') return json({ sig: 't1', open: true, menu: 5, list: [{ k: 'minecraft:diamond', n: 1234 }], items: { 'minecraft:diamond': { name: 'Diamond', max: 64 } }, free: 10, slots: 54 });
   if (u.pathname === '/api/spawns') return json({ ok: true, items: {}, buckets: [{ bucket: 'common', list: [{ name: 'Pidgey', pct: 40, dex: 16, dexState: 'CAUGHT', types: 'normal/flying' }, { name: 'Rattata', pct: 35, dex: 19, dexState: 'NONE' }] }, { bucket: 'ultra-rare', list: [] }] });
+  if (u.pathname === '/api/map') return json({ ok: true, dim: 'minecraft:overworld', mappable: true, x: 0, z: 0, yaw: 0, tile: 256, tiles: [], xaero: true,
+    waypoints: [{ i: 0, name: 'Home', initials: 'H', x: 100, y: 64, z: 100 }], mons: [{ name: 'Pidgey', lvl: 4, x: -30, z: 0, wild: true, shiny: false }] });
   if (u.pathname === '/api/bag') {
     if (opts && opts.method === 'POST') { actions.push(Object.assign({ via: 'bag' }, JSON.parse(opts.body))); return json({ ok: true }); }
     return json({ ok: true, inBattle: true, wild: true, canAct: true, backpacks: true,
@@ -77,7 +79,7 @@ w.console.error = (...a) => errors.push(a.join(' '));
 w.addEventListener('error', e => errors.push(String(e.error && e.error.stack || e.message)));
 setState('none');
 // Test-only handle into the page's script scope (strict-mode declarations aren't globals).
-w.eval(appJs + '\nwindow.__t = { showTab, layoutSlots, setLastTouch: v => { lastTouch = v; } };');
+w.eval(appJs + '\nwindow.__t = { showTab, layoutSlots, mapTap, loadMap, setLastTouch: v => { lastTouch = v; } };');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const $ = s => w.document.querySelector(s);
@@ -261,6 +263,42 @@ const activeTab = () => ($('#tabs button.on') || {}).dataset?.tab;
   await sleep(100);
   const sent = actions.slice(n0);
   check(sent.length === 1 && sent[0].kind === 'terminal', 'a terminal tap sends one terminal action (no stray key press)');
+
+  // map: tap empty map -> add waypoint; tap a waypoint -> its sheet
+  w.__t.showTab('map'); await sleep(300);
+  check(!!$('#tab-map.on #map-canvas'), 'Map tab shows the map');
+  actions.length = 0;
+  w.__t.mapTap(0, 0); await sleep(20);
+  check($('#sheet').textContent.includes('Add waypoint here'), 'tapping the map offers to add a waypoint');
+  [...$$('#sheet [data-opt]')].find(b => b.textContent.startsWith('Add waypoint')).click(); await sleep(100);
+  check(actions.some(a => a.kind === 'map' && a.op === 'addWaypoint' && a.x === 0 && a.z === 0), 'Add waypoint sends the spot');
+  w.__t.mapTap(201, 201); await sleep(20);
+  check($('#sheet').textContent.includes('Home') && $('#sheet').textContent.includes('Delete'), 'tapping a waypoint opens it');
+  $('#sheet .close').click();
+  w.__t.showTab('storage'); await sleep(100);
+
+  // screen controls: Cobblemon Summary + touchpad
+  st = Object.assign(STATES.none(), { screen: { kind: 'summary', cls: 'com.cobblemon.mod.common.client.gui.summary.Summary', title: '',
+    summary: { tab: 1, side: 0, sel: 0, party: ['Pikachu', 'Vulpix', '', '', '', ''] } } }); rev++;
+  await sleep(400);
+  check(!$('#screenpad').classList.contains('hidden') && $('#sum-name').textContent.includes('Pikachu'), 'Summary open shows the screen controls');
+  check($('#sum-tabs [data-sumtab="1"]').classList.contains('on'), 'the open Summary page is highlighted');
+  actions.length = 0;
+  $('#sum-next').click(); await sleep(50);
+  $('#sum-tabs [data-sumtab="2"]').click(); await sleep(50);
+  $('#sp-back').click(); await sleep(50);
+  check(actions.some(a => a.kind === 'summary' && a.op === 'select' && a.i === 1), 'Next ▶ selects the next Pokémon');
+  check(actions.some(a => a.kind === 'summary' && a.op === 'tab' && a.i === 2), 'page keys switch the Summary page');
+  check(actions.some(a => a.kind === 'pointer' && a.op === 'escape'), 'Back / Close sends Esc');
+  actions.length = 0;
+  tap($('#pad')); await sleep(100);
+  check(actions.some(a => a.kind === 'pointer' && a.op === 'click'), 'tapping the touchpad clicks');
+  $('#sp-hide').click(); await sleep(50);
+  check($('#screenpad').classList.contains('hidden') && !$('#sp-show').classList.contains('hidden'), 'Hide tucks the controls into a button');
+  st = Object.assign(STATES.none(), { screen: { kind: 'other', cls: 'com.cobblemon.mod.common.client.gui.battle.BattleGUI', title: '' } }); rev++;
+  await sleep(400);
+  check($('#screenpad').classList.contains('hidden') && $('#sp-show').classList.contains('hidden'), 'no screen controls over the battle screen');
+  setState('none'); await sleep(300);
 
   // idle blackout
   w.__t.setLastTouch(Date.now() - 10 * 60 * 1000);
