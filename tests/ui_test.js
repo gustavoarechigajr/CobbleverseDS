@@ -77,7 +77,7 @@ w.console.error = (...a) => errors.push(a.join(' '));
 w.addEventListener('error', e => errors.push(String(e.error && e.error.stack || e.message)));
 setState('none');
 // Test-only handle into the page's script scope (strict-mode declarations aren't globals).
-w.eval(appJs + '\nwindow.__t = { showTab, setLastTouch: v => { lastTouch = v; } };');
+w.eval(appJs + '\nwindow.__t = { showTab, layoutSlots, setLastTouch: v => { lastTouch = v; } };');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const $ = s => w.document.querySelector(s);
@@ -127,6 +127,16 @@ const activeTab = () => ($('#tabs button.on') || {}).dataset?.tab;
   const before = actions.length;
   tap($('#grid .slot[data-i="20"]')); await sleep(50);
   check(actions.length === before, 'selection is cleared when the container changes');
+  // a scrolling container (backpack) parks a row at y=-100: the panel lays it out below the others
+  {
+    const w2 = w;
+    const fake = [];
+    for (let i = 0; i < 24; i++) fake.push({ i, g: 'c', x: 8 + (i % 12) * 18, y: i < 12 ? 18 : -100 });
+    for (let i = 0; i < 9; i++) fake.push({ i: 24 + i, g: 'h', x: 38 + i * 18, y: 60 });
+    const out = w2.__t.layoutSlots(fake);
+    const hidden = out.filter(s => s.g === 'c' && s.i >= 12);
+    check(hidden.every(s => s.y === 36) && out.find(s => s.i === 24).y === 78, 'off-screen backpack rows are laid out in order, inventory pushed down');
+  }
   // long-press a stack: the item menu (replaces the old mode keys)
   const longPress = async el => { el.dispatchEvent(new w.MouseEvent('pointerdown', { bubbles: true, clientX: 1, clientY: 1 })); await sleep(520); el.dispatchEvent(new w.MouseEvent('pointerup', { bubbles: true, clientX: 1, clientY: 1 })); };
   const full = $$('#grid .slot').find(el => el.querySelector('img, .txt'));

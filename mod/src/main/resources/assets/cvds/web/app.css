@@ -179,9 +179,10 @@ h3 small { font: 700 20px var(--round); color: var(--dim); }
 #net-sort { flex: none; }
 
 /* ---------- crafting ---------- */
-.cards { flex: 1; overflow: auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(440px, 1fr)); gap: 12px; align-content: start; }
+/* flexbox, not grid: WebView 109 sized the rows of a scrolling grid too short and the cards overlapped */
+.cards { flex: 1; min-height: 0; overflow: auto; display: flex; flex-wrap: wrap; gap: 12px; align-content: flex-start; }
 .card {
-  display: flex; flex-direction: column; gap: 12px; min-height: 112px; padding: 12px 14px;
+  flex: 1 1 440px; min-width: 0; display: flex; flex-direction: column; gap: 12px; min-height: 112px; padding: 12px 14px;
   background: var(--slot); border-radius: 14px;
   box-shadow: inset 3px 3px 0 var(--slot-lo), inset -3px -3px 0 var(--slot-hi);
 }
@@ -191,7 +192,9 @@ h3 small { font: 700 20px var(--round); color: var(--dim); }
 .card .sub { color: var(--dim); font-size: 21px; line-height: 1.25; }
 .card.no { opacity: .5; }
 .card .top { display: flex; gap: 14px; align-items: center; }
-.card .acts { display: grid; grid-template-columns: 1.3fr 1fr 1fr 1.4fr; gap: 10px; }
+.card .acts { display: flex; gap: 10px; }
+.card .acts button { flex: 1 1 0; }
+.card .acts button[data-c="1"], .card .acts button[data-c="max"] { flex-grow: 1.4; }
 .card .acts button { min-height: 72px; min-width: 0; padding: 6px 8px; font-size: 24px; box-shadow: 0 4px 0 var(--ink); }
 .card .ings { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px; }
 .ing { display: inline-flex; align-items: center; gap: 4px; padding: 2px 10px 2px 4px; border-radius: 999px; font: 800 19px var(--round); background: #2a2d32; }

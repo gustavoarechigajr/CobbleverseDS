@@ -129,12 +129,29 @@ function iconUrl(k) { return '/api/icon/' + encodeURIComponent(k); }
 function menuSlots() { return (state.menu && state.menu.slots) || []; }
 function slotByIndex(i) { return menuSlots().find(s => s.i === i); }
 
+// Scrolling containers (Sophisticated Backpacks, big modded chests) park the rows that are scrolled out of
+// view at negative coordinates. Lay the container out as a plain grid in slot order instead, so every row
+// shows, and push the player's inventory down below it.
+function layoutSlots(slots) {
+  const c = slots.filter(s => s.g === 'c');
+  const off = s => s.x < 0 || s.y < 0;
+  if (!c.some(off)) return slots;
+  const vis = c.filter(s => !off(s));
+  if (!vis.length) return slots;
+  const xs = [...new Set(vis.map(s => s.x))].sort((a, b) => a - b), cols = xs.length;
+  const x0 = xs[0], y0 = Math.min(...vis.map(s => s.y)), first = Math.min(...c.map(s => s.i));
+  const oldBottom = Math.max(...vis.map(s => s.y));
+  const at = new Map(c.map(s => { const k = s.i - first; return [s.i, { x: x0 + (k % cols) * 18, y: y0 + Math.floor(k / cols) * 18 }]; }));
+  const dy = Math.max(...[...at.values()].map(p => p.y)) - oldBottom;
+  return slots.map(s => s.g === 'c' ? Object.assign({}, s, at.get(s.i)) : s.y > oldBottom ? Object.assign({}, s, { y: s.y + dy }) : s);
+}
+
 function renderGrid(force) {
   const grid = $('#grid');
   const sig = JSON.stringify([state.menu, state.screen, state.status.hotbar, $('#inv-search').value, selected, $('#grid-wrap').clientWidth, $('#grid-wrap').clientHeight]);
   if (!force && sig === lastGridSig) return;
   lastGridSig = sig;
-  const slots = menuSlots();
+  const slots = layoutSlots(menuSlots());
   const kind = state.screen.kind;
   $('#screen-title').textContent = kind === 'container' ? (state.screen.title || 'Container') :
     kind === 'creative' ? 'Creative inventory isn\'t supported. Showing your inventory.' : 'Your inventory';
@@ -180,7 +197,7 @@ function renderGrid(force) {
     if (img.complete && img.naturalWidth) hide(); else img.addEventListener('load', hide);
   });
   $('#bulk').classList.toggle('hidden', kind !== 'container');
-  $('#more').classList.toggle('hidden', kind !== 'container');
+  $('#more').classList.toggle('hidden', kind !== 'container' || !!(state.menu && state.menu.grid)); // nothing to take/store on a crafting grid
   // A terminal has no container slots: only storing (all / matching the network) applies.
   const term = !!state.screen.terminal;
   $$('#bulk [data-bulk="take"], #bulk [data-bulk="sortc"]').forEach(b => b.classList.toggle('hidden', term));
