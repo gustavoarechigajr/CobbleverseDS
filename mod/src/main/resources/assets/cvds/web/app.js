@@ -1042,11 +1042,11 @@ function renderBattle() {
     const col = TYPE_COLOR[(m.type || '').toLowerCase()] || '#555';
     const pow = m.power > 0 ? `Power ${Math.round(m.power)}` : '';
     const acc = m.acc > 0 ? `Acc ${Math.round(m.acc)}%` : '';
-    return `<button class="mv" data-move="${esc(m.id)}" style="background:linear-gradient(180deg, ${col}, ${darken(col, .75)});${typeInk(m.type)}" ${m.disabled || m.pp <= 0 ? 'aria-disabled="true"' : ''}>
+    return `<button class="mv" data-move="${esc(m.id)}" style="background:linear-gradient(180deg, ${col}, ${darken(col, .75)});${typeInk(m.type)}" ${m.disabled || m.pp <= 0 || (gimmick === 'zmove' && !m.zmove) ? 'aria-disabled="true"' : ''}>
       <span class="t">${esc(gimmick === 'zmove' && m.zmove ? m.zmove : gimmick === 'max' && m.maxmove ? m.maxmove : m.name)}</span>
       <span class="row"><span>${esc(m.type || '')} · ${esc(m.cat || '')}${stab ? ' · STAB' : ''}</span><span>PP ${m.pp}/${m.maxPp}</span></span>
       <span class="row"><span>${pow} ${acc}</span></span>
-      <span class="eff ${cls}">${m.pp <= 0 ? 'No PP left' : m.disabled ? 'Disabled this turn' : label}</span></button>`;
+      <span class="eff ${cls}">${m.pp <= 0 ? 'No PP left' : m.disabled ? 'Disabled this turn' : gimmick === 'zmove' && !m.zmove ? 'No Z-Move' : label}</span></button>`;
   }).join(''));
   $('#b-switch-h').classList.remove('hidden');
   const why = p => p.active ? 'In battle' : p.hp <= 0 ? 'Fainted' : r.trapped ? 'Trapped' : '';
@@ -1093,6 +1093,7 @@ gestures($('#b-moves'), '.mv', {
     const m = moveById(el.dataset.move);
     if (!m) return;
     if (m.pp <= 0 || m.disabled) { toast(m.pp <= 0 ? 'No PP left for ' + m.name : m.name + ' is disabled this turn'); return; }
+    if (gimmick === 'zmove' && !m.zmove) { toast(m.name + ' has no Z-Move: pick another move or turn Z-Power off'); return; }
     const ts = m.targets || [];
     // Double battles: pick the target when there's a real choice.
     if (!battle.request.singles && ts.length > 1)

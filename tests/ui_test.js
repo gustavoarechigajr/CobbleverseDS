@@ -64,7 +64,7 @@ async function fakeFetch(url, opts) {
               { k: 'cobblemon:ether', name: 'Ether', inv: 1, pack: 0, inGame: true, targets: [] }],
       balls: [{ k: 'cobblemon:poke_ball', name: 'Poké Ball', inv: 0, pack: 12 }] });
   }
-  if (u.pathname === '/api/battle') return json(st.battle && st.waiting ? { active: true, mine: [], theirs: [] } : st.battle ? { active: true, minimised: !!st.minimised, mine: [{ name: 'Pikachu', species: 'Pikachu', lvl: 12, hp: 30, maxHp: 35, flat: true, types: ['Electric'] }], theirs: [{ name: 'Gyarados', species: 'Gyarados', lvl: 20, hp: 1, maxHp: 1, flat: false, types: ['Water', 'Flying'] }], request: { singles: true, gimmicks: ['mega', 'zmove', 'terastal'], teraType: 'Fire', moves: [{ id: 'thunderbolt', name: 'Thunderbolt', zmove: 'Gigavolt Havoc', pp: 15, maxPp: 15, type: 'Electric', cat: 'special', power: 90, acc: 100 }], bench: [] } } : { active: false });
+  if (u.pathname === '/api/battle') return json(st.battle && st.waiting ? { active: true, mine: [], theirs: [] } : st.battle ? { active: true, minimised: !!st.minimised, mine: [{ name: 'Pikachu', species: 'Pikachu', lvl: 12, hp: 30, maxHp: 35, flat: true, types: ['Electric'] }], theirs: [{ name: 'Gyarados', species: 'Gyarados', lvl: 20, hp: 1, maxHp: 1, flat: false, types: ['Water', 'Flying'] }], request: { singles: true, gimmicks: ['mega', 'zmove', 'terastal'], teraType: 'Fire', moves: [{ id: 'thunderbolt', name: 'Thunderbolt', zmove: 'Gigavolt Havoc', pp: 15, maxPp: 15, type: 'Electric', cat: 'special', power: 90, acc: 100 }, { id: 'lightscreen', name: 'Light Screen', pp: 30, maxPp: 30, type: 'Psychic', cat: 'status', power: 0, acc: 0 }], bench: [] } } : { active: false });
   return { ok: false, status: 404, json: async () => ({ ok: false, error: 'nope' }) };
 }
 
@@ -211,6 +211,12 @@ const activeTab = () => ($('#tabs button.on') || {}).dataset?.tab;
   check($('#b-moves').textContent.includes('Gigavolt Havoc'), 'Z-Power shows the Z-move names');
   actions.length = 0; tap($('#b-moves .mv')); await sleep(50);
   check(actions.some(a => a.op === 'move' && a.gimmick === 'zmove'), 'a move picked with Z-Power on sends the gimmick');
+  $('#b-gimmicks [data-gim="zmove"]').click(); await sleep(50);
+  const ls = $$('#b-moves .mv').find(b => b.dataset.move === 'lightscreen');
+  check(ls && ls.getAttribute('aria-disabled') === 'true' && ls.textContent.includes('No Z-Move'), 'with Z-Power on, a move with no Z version is greyed out');
+  actions.length = 0; tap(ls); await sleep(50);
+  check(!actions.some(a => a.op === 'move'), 'tapping a move with no Z version sends nothing');
+  $('#b-gimmicks [data-gim="zmove"]').click(); await sleep(50);
   check(!$('#st-main').textContent.includes('Waiting'), 'no render error during battle');
   check(!$('#b-view').classList.contains('hidden') && $('#b-view').textContent === 'Move around', 'battle shows a Move around key');
   actions.length = 0; $('#b-view').click(); await sleep(50);
