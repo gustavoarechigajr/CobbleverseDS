@@ -1561,7 +1561,7 @@ $$('[data-pad]').forEach(b => b.addEventListener('click', () => {
 // Touchpad: relative moves like a laptop trackpad, sent every 40 ms; a short tap clicks.
 (() => {
   const pad = $('#pad');
-  const GAIN = 0.55; // GUI pixels per panel pixel
+  const GAIN = 0.28; // GUI pixels per panel pixel (about 1:1 on the top screen at GUI scale 3-4)
   let last = null, start = null, moved = 0, acc = [0, 0], timer = null;
   const flush = () => { timer = null; if (acc[0] || acc[1]) { const [dx, dy] = acc; acc = [0, 0]; padSend({ op: 'move', dx, dy }); } };
   pad.addEventListener('pointerdown', e => { last = [e.clientX, e.clientY]; start = Date.now(); moved = 0; pad.classList.add('active'); try { pad.setPointerCapture(e.pointerId); } catch {} });
@@ -1570,7 +1570,7 @@ $$('[data-pad]').forEach(b => b.addEventListener('click', () => {
     const dx = e.clientX - last[0], dy = e.clientY - last[1];
     last = [e.clientX, e.clientY];
     moved += Math.abs(dx) + Math.abs(dy);
-    const speed = Math.min(3, 1 + Math.hypot(dx, dy) / 25); // faster swipes travel further
+    const speed = Math.min(2.5, 1 + Math.hypot(dx, dy) / 40); // faster swipes travel further
     acc[0] += dx * GAIN * speed; acc[1] += dy * GAIN * speed;
     if (!timer) timer = setTimeout(flush, 40);
   });

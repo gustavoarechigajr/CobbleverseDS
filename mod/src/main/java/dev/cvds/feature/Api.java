@@ -113,8 +113,9 @@ public final class Api implements dev.cvds.net.MiniHttpServer.Handler {
 	}
 
 	static JsonObject action(Minecraft mc, JsonObject a) {
-		if (mc.player == null || mc.gameMode == null) return error("not in game");
 		String kind = a.has("kind") ? a.get("kind").getAsString() : "inv";
+		if (kind.equals("pointer")) return Pointer.act(mc, a); // menus outside a world too (title, world list)
+		if (mc.player == null || mc.gameMode == null) return error("not in game");
 		return switch (kind) {
 			case "inv" -> InvOps.run(mc, a);
 			case "craft" -> Crafting.craft(mc, a.get("id").getAsString(), a.has("max") && a.get("max").getAsBoolean(), a.has("count") ? a.get("count").getAsInt() : 1);
