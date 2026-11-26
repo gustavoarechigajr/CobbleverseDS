@@ -35,13 +35,47 @@ The status bar shows coordinates, biome, day and time, weather, whether you can 
 - The app never forces the screen to stay on.
 - During automated tests the mod draws the game frame solid black.
 
-## Install (Thor + Zalith Launcher 2)
-1. Build: `cd mod && ./gradlew build` (needs JDK 21), then `android/build.sh`.
-2. Copy `mod/build/libs/cobbleverse-ds-*.jar` into the instance's `mods/` folder
-   (`.minecraft/versions/Cobbleverse/mods/` in Zalith).
-3. Install `android/build/cobbleverse-ds.apk`. Tap the "Cobbleverse DS" icon on either screen: it always
-   opens on the bottom screen (and brings the running panel forward if it's already open). After a game
-   restart the panel reloads itself, so a new mod build shows up without reopening the app.
+## Install
+
+You need two files from the [latest release](https://github.com/gustavoarechigajr/CobbleverseDS/releases/latest):
+
+| File | What it is | Goes on |
+|---|---|---|
+| `cobbleverse-ds-<version>.jar` | The Fabric mod. Runs inside the game and serves the panel. | Your Cobbleverse instance's `mods/` folder |
+| `cobbleverse-ds-<version>.apk` | The panel app for the bottom screen. | The handheld (installed like any Android app) |
+
+**Requirements:** Cobbleverse for Minecraft 1.21.1 (Fabric, Cobblemon 1.7) running in an Android launcher such as
+Zalith Launcher 2, on a dual-screen device like the AYN Thor. Fabric API comes with the pack. Battle bag
+and backpack features use Sophisticated Backpacks; waypoints use Xaero's Minimap. Both are optional.
+
+### 1. Add the mod to Cobbleverse
+1. Download `cobbleverse-ds-<version>.jar` on the device.
+2. Open the instance's mods folder. In Zalith Launcher 2: tap the folder icon (top right), open
+   `versions/Cobbleverse/mods/` (or whatever your Cobbleverse instance is called). With version isolation off,
+   it's `.minecraft/mods/` instead.
+3. Copy the jar into that folder. **When updating, delete the old `cobbleverse-ds-*.jar` first**, so only
+   one copy is there.
+
+### 2. Install the panel app
+1. Download `cobbleverse-ds-<version>.apk` on the device and open it. Android asks you to allow installs from
+   your browser or file manager the first time; allow it.
+2. If an older Cobbleverse DS is installed and Android says the update conflicts with it, uninstall the old app
+   and install again. This happens when the app was built on a different computer. It resets the panel's
+   favourites and settings.
+
+### 3. Play
+1. Start Cobbleverse and load a world.
+2. Tap the **Cobbleverse DS** icon (the red lid with the blue lens). It always opens on the bottom screen, from
+   either screen, and brings the panel back if it's already running.
+3. The panel waits for the game by itself. After a game restart it reconnects and reloads on its own.
+
+To check it's working: the three lights in the panel's top-left turn **green** in a world, **yellow** on the
+title screen, and **red** if the game isn't running or the mod isn't installed.
+
+### Building it yourself
+`cd mod && ./gradlew build` (JDK 21) makes the jar in `mod/build/libs/`. `android/build.sh` makes the APK in
+`android/build/` with plain Android SDK tools (any build-tools 34+ and platform 33+, JDK 17+). See `HANDOFF.md`
+for the full development setup and testing on a device.
 
 The app's window never takes input focus (except while you type). Launching any app on the bottom screen still makes Android treat the bottom screen as "focused"; the Thor's `screen_focus_lock` (controller focus on the top screen) keeps controller buttons going to the game. If buttons ever stop reaching the game after opening the panel, tap the top screen once.
 

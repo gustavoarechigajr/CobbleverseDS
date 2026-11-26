@@ -15,14 +15,14 @@ mod does; this file is about working on it.
 
 ## Prerequisites
 - **JDK 21** for the mod (Gradle wrapper 8.14.3, Loom 1.11.8; Loom 1.19+ needs Java 25). Set `JAVA_HOME`.
-- **Android SDK** with `build-tools/35.0.0` and `platforms/android-33`, plus any JDK 17+, for the APK. Set
-  `ANDROID_SDK` (or `ANDROID_HOME`). A debug key is created on first build if `~/.android/debug.keystore` is missing.
+- **Android SDK** with build-tools 34+ and a platform 33+, plus any JDK 17+, for the APK. `build.sh` finds it in
+  `$ANDROID_SDK`, `~/android-dev/sdk` or `~/Android/Sdk`. A debug key is created on first build if `~/.android/debug.keystore` is missing.
   Note: a different PC means a different debug key, so `adb install -r` over the Deck-built app fails; uninstall it once first.
 - **adb**, **python3**, **node** (+ `cd tests && npm install` for the UI test).
 
 ## Build
 ```bash
-cd mod && ./gradlew build            # jar -> mod/build/libs/cobbleverse-ds-0.1.0.jar (also runs unit tests)
+cd mod && ./gradlew build            # jar -> mod/build/libs/cobbleverse-ds-<mod_version>.jar (also runs unit tests)
 android/build.sh                     # apk -> android/build/cobbleverse-ds.apk
 ```
 Cobblemon and Tom's Simple Storage are compile-only dependencies pulled from Modrinth's Maven (the exact builds
@@ -40,7 +40,8 @@ in the pack, matched by checksum).
 ## Deploying to the Thor (Zalith Launcher 2)
 - Instance folder: `/sdcard/Android/data/com.movtery.zalithlauncher.v2/files/.minecraft/versions/Cobbleverse/`
   (version isolation on, so `mods/`, `config/`, `saves/` live there).
-- `adb push mod/build/libs/cobbleverse-ds-0.1.0.jar <instance>/mods/` and `adb install -r android/build/cobbleverse-ds.apk`.
+- `adb push mod/build/libs/cobbleverse-ds-<version>.jar <instance>/mods/` (remove an older `cobbleverse-ds-*.jar` there first:
+  two copies of the mod crash the game) and `adb install -r android/build/cobbleverse-ds.apk`.
 - Wireless ADB: the serial and port change whenever wireless debugging restarts (`adb mdns services`).
   Android turns wireless debugging off after a while asleep; it has to be re-enabled on the device.
 - Open the panel: the "Cobbleverse DS" icon (`LaunchActivity`, an invisible trampoline that starts the panel on the
@@ -67,6 +68,12 @@ soon as a run is done. Don't loop `KEYCODE_WAKEUP`.
 **Never touch the real save** (`saves/New World`). For anything that needs real terrain, copy it
 (`cp -r 'New World' zz-something` on the device), use the copy, delete it after (it shows up as a second
 "New World" in the world list otherwise).
+
+## Releasing
+1. Bump `mod_version` in `mod/gradle.properties` and `versionCode`/`versionName` in `android/AndroidManifest.xml`.
+2. `cd mod && ./gradlew build`, `node tests/ui_test.js`, `bash android/build.sh`.
+3. Tag `v<version>`, push, and `gh release create v<version>` with the jar and the APK (renamed
+   `cobbleverse-ds-<version>.apk`) attached. The APK is signed with the building PC's debug key.
 
 ## Gotchas (each cost real debugging time)
 - **Controlify must be 2.x** (2.5.2 installed): the pack's Zoomify crashes the game with Controlify 3.x.
@@ -129,7 +136,8 @@ Open items / ideas:
 - Verify with real buttons that the controller still reaches the game after opening the panel (the Thor's
   `screen_focus_lock=1` should handle it; injected keys can't test it).
 - Double-battle targeting; pasture and CobbleDollars shop screens; drag-to-spread in storage.
-- Map: import areas Xaero's World Map already explored; mirror letterboxing (black bars above/below the picture).
+- Decided against: importing Xaero's World Map history (fragile undocumented format; Xaero's own map is one tap
+  away in the mirror) and a background service that opens/closes the panel with the game (too heavy for one game).
 - Zalith's on-screen touch buttons are static on the top screen (burn-in): suggest hiding them in Zalith.
 
 ## The Thor setup itself (for reference)
