@@ -1120,7 +1120,12 @@ function sheet(title, body, opts = []) {
     (opts.length ? `<div class="opts">${opts.map((o, i) => `<button data-opt="${i}" class="${o.cls || ''}" ${o.disabled ? 'disabled' : ''}>${esc(o.label)}${o.sub ? `<small>${esc(o.sub)}</small>` : ''}</button>`).join('')}</div>` : '') +
     `<button class="close">Close</button>`;
   el.classList.remove('hidden');
+  // A sheet opened on finger-lift (map tap, gestures) is followed by the browser's own click for that touch,
+  // which would land on the new sheet and close it (or pick an option): ignore real clicks right after opening
+  // (no finger taps again that fast; script-driven clicks are never that leftover click).
+  const opened = Date.now();
   el.onclick = e => {
+    if (e.isTrusted && Date.now() - opened < 350) return;
     const b = e.target.closest('[data-opt]');
     if (b && !b.disabled) { closeSheet(); opts[Number(b.dataset.opt)].run(); return; }
     if (e.target === el || e.target.closest('.close')) closeSheet();

@@ -20,6 +20,7 @@ public abstract class GameRendererMixin {
 	@Inject(method = "render", at = @At("TAIL"))
 	private void cvds$blackout(DeltaTracker delta, boolean renderLevel, CallbackInfo ci) {
 		dev.cvds.feature.Mirror.capture(Minecraft.getInstance()); // before the debug blackout covers the frame
+		dev.cvds.feature.Pointer.afterFrame(); // mirror clicks that were waiting for the mouse move to be drawn
 		if (!Debug.blackout()) return;
 		Minecraft mc = Minecraft.getInstance();
 		int w = mc.getWindow().getGuiScaledWidth(), h = mc.getWindow().getGuiScaledHeight();
