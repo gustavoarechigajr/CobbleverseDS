@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Dex Lens icon, background: the panel's red Pokédex lid with its white seam (108x108 adaptive layer). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android" xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp" android:height="108dp" android:viewportWidth="108" android:viewportHeight="108">
+    <path android:pathData="M0,0 H108 V108 H0 Z">
+        <aapt:attr name="android:fillColor">
+            <gradient android:type="radial" android:centerX="37.8" android:centerY="27" android:gradientRadius="92">
+                <item android:offset="0" android:color="#FFF26A55"/>
+                <item android:offset="0.6" android:color="#FFE0402F"/>
+                <item android:offset="1" android:color="#FFA82E22"/>
+            </gradient>
+        </aapt:attr>
+    </path>
+    <path android:fillColor="#FFF6F7F9" android:pathData="M0,78 Q40,64 70,74 T108,70 V108 H0 Z"/>
+    <path android:strokeColor="#FF141414" android:strokeWidth="3.5" android:fillColor="#00000000" android:pathData="M0,78 Q40,64 70,74 T108,70"/>
+</vector>

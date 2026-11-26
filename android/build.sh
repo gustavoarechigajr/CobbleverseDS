@@ -12,7 +12,8 @@ if [ -z "${JAVA_HOME:-}" ] && [ -d "$HOME/android-dev/jdk17" ]; then export JAVA
 if [ -n "${JAVA_HOME:-}" ]; then export PATH=$JAVA_HOME/bin:$PATH; fi
 OUT=build
 rm -rf "$OUT" && mkdir -p "$OUT/classes" "$OUT/dex"
-"$BT/aapt2" link -o "$OUT/base.apk" --manifest AndroidManifest.xml -I "$PLAT" --min-sdk-version 26 --target-sdk-version 33
+"$BT/aapt2" compile --dir res -o "$OUT/res.zip"  # app icon (adaptive vector drawables)
+"$BT/aapt2" link -o "$OUT/base.apk" --manifest AndroidManifest.xml -I "$PLAT" --min-sdk-version 26 --target-sdk-version 33 "$OUT/res.zip"
 javac -Xlint:-options --release 11 -classpath "$PLAT" -d "$OUT/classes" $(find src -name '*.java')
 "$BT/d8" --min-api 26 --lib "$PLAT" --output "$OUT/dex" $(find "$OUT/classes" -name '*.class')
 cp "$OUT/base.apk" "$OUT/unsigned.apk"
