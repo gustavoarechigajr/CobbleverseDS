@@ -24,7 +24,7 @@ becomes a touch panel for the things a controller is bad at.
 | Spawns | (singleplayer) What can spawn where you stand, by rarity bucket with chances, Pokémon pictures and a Pokédex badge (New / Seen / Caught); "only not caught" filter; refreshes on biome change. It runs Cobblemon's own `/checkspawn` as you (read-only) and keeps its replies out of chat. |
 | Map | (needs Xaero's Minimap for waypoints) A top-down map drawn from the chunks you've loaded, saved per world, with nearby Pokémon and waypoints. Tap the map to add a waypoint or teleport; tap a waypoint to centre, teleport or delete. Underground and in the Nether it switches to a **cave map** of the 16-block band you're in (rock dark, floors and water in colour). |
 | Chat | Chat and commands with the Android keyboard, plus saved one-tap commands (☆ saves, long-press removes). |
-| Menu mirror | Any menu without a panel page (title screen, world list, Pokédex, mod menus, Xaero's map) appears as a live picture you touch directly: tap = click, hold = right-click, drag, two fingers = scroll, pinch or double-tap = zoom. |
+| Menu mirror | Any menu without a panel page (title screen, world list, Pokédex, mod menus, Xaero's map) appears as a live picture you touch directly: tap = click, hold = right-click, drag, two fingers = scroll, pinch or double-tap = zoom. The picture is sized to the game's 16:9 shape (no black bars), with big Scroll up / Scroll down keys underneath that scroll where you last touched. |
 
 The status bar shows coordinates, biome, day and time, weather, whether you can sleep, health, food and level.
 

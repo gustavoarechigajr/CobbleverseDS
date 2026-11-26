@@ -142,7 +142,11 @@
     <section id="screenpad" class="hidden" aria-label="Menu mirror">
       <div class="sp-head"><h2 id="sp-title">Menu</h2><span id="mir-zoom" class="hidden"></span><button id="sp-hide">Hide</button><button id="sp-back" class="sp-back">Back</button></div>
       <div id="mirror"><img id="mir-img" alt="" draggable="false"><div id="mir-wait">Opening the menu…</div></div>
-      <div class="note" id="mir-help">Tap = click · hold = right-click · drag = drag · two fingers = scroll · pinch or double-tap = zoom</div>
+      <!-- The picture is sized to the game's shape; the room left under it holds big scroll keys -->
+      <div class="sp-foot">
+        <div class="sp-scroll"><button id="mir-up" aria-label="Scroll up">▲<small>Scroll up</small></button><button id="mir-down" aria-label="Scroll down">▼<small>Scroll down</small></button></div>
+        <div class="note" id="mir-help">Tap = click · hold = right-click · drag = drag · two fingers = scroll · pinch or double-tap = zoom</div>
+      </div>
     </section>
     <button id="sp-show" class="hidden">Show menu</button>
     <!-- Pokémon page: everything the Summary shows, with its edits as big buttons -->

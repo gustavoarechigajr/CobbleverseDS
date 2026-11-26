@@ -448,7 +448,12 @@ details .keys { padding: 4px 0 14px; }
 #screenpad .sp-back { min-width: 140px; background: linear-gradient(180deg, #ffb3aa, var(--bad)); color: #fff; text-shadow: 1px 1px 0 rgba(0,0,0,.35); }
 #mir-zoom { font: 800 22px var(--round); color: var(--ink); background: var(--yellow); border: 3px solid var(--ink); border-radius: 999px; padding: 4px 14px; cursor: pointer; }
 /* the picture: as big as the panel allows, 16:9, crisp pixels; touch is handled in JS */
-#mirror { position: relative; flex: 1; min-height: 0; overflow: hidden; border-radius: 10px; background: #000; touch-action: none; }
+/* Sized in JS to the game's 16:9 (no black bars); the footer takes the rest of the height. */
+#mirror { position: relative; flex: none; min-height: 0; overflow: hidden; border-radius: 10px; background: #000; touch-action: none; }
+#screenpad .sp-foot { flex: 1; min-height: 0; display: flex; flex-direction: column; justify-content: center; gap: 6px; }
+.sp-scroll { display: flex; gap: 10px; }
+.sp-scroll button { flex: 1; min-height: 88px; display: flex; align-items: center; justify-content: center; gap: 14px; font: 700 34px/1 var(--pixel); }
+.sp-scroll button small { font: 800 24px var(--round); }
 #mir-img { position: absolute; left: 0; top: 0; transform-origin: 0 0; image-rendering: pixelated; user-select: none; -webkit-user-drag: none; pointer-events: none; }
 #mir-wait { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font: 700 26px var(--round); color: var(--dim); pointer-events: none; }
 #mir-help { text-align: center; font-size: 19px; margin: 0; }

@@ -1694,6 +1694,7 @@ function renderScreenpad() {
   if (key !== padScreen) { padScreen = key; padHidden = false; mir.reset(); } // a new menu: show it, zoom out
   const showing = want && !padHidden;
   $('#screenpad').classList.toggle('hidden', !showing);
+  if (showing) mir.layout(); // size the picture box now that it's visible
   $('#sp-show').classList.toggle('hidden', !want || !padHidden);
   $('#sp-title').textContent = sc.kind === 'summary' ? 'Summary' : (sc.title || 'Menu');
   mir.run(showing);
@@ -1709,7 +1710,21 @@ const mir = (() => {
   // view: zoom 1 = the whole frame fitted into the box; ox/oy = frame-pixel offset of the top-left corner
   let zoom = 1, ox = 0, oy = 0;
   const fit = () => { const r = box.getBoundingClientRect(); return Math.min(r.width / fw, r.height / fh) || 1; };
+  // Give the picture box the game's shape (no letterbox bars), as tall as the panel allows with room for the
+  // scroll keys under it; the footer below takes whatever height is left.
+  const FOOT_MIN = 120;
+  function sizeBox() {
+    const pad = $('#screenpad');
+    if (pad.classList.contains('hidden')) return;
+    const head = pad.querySelector('.sp-head'), cs = getComputedStyle(pad);
+    const inner = pad.clientHeight - parseFloat(cs.paddingTop || 0) - parseFloat(cs.paddingBottom || 0);
+    const room = inner - (head ? head.offsetHeight : 0) - 2 * parseFloat(cs.rowGap || cs.gap || 6) - FOOT_MIN;
+    const want = box.clientWidth * fh / fw;
+    const h = Math.max(120, Math.floor(Math.min(want, room)));
+    if (box.style.height !== h + 'px') box.style.height = h + 'px';
+  }
   function layout() {
+    sizeBox();
     const r = box.getBoundingClientRect(), s = fit() * zoom;
     const vw = r.width / s, vh = r.height / s; // visible frame size
     ox = Math.max(0, Math.min(ox, fw - vw)); oy = Math.max(0, Math.min(oy, fh - vh));
@@ -1855,6 +1870,11 @@ const mir = (() => {
   box.addEventListener('pointerup', up);
   box.addEventListener('pointercancel', up);
   $('#mir-zoom').addEventListener('click', () => { zoom = 1; ox = oy = 0; layout(); });
+  let lastUV = null;
+  box.addEventListener('pointerdown', e => { const p = pos(e); lastUV = toUV(p[0], p[1]) || lastUV; }, true);
+  const scrollKey = dir => () => { for (let i = 0; i < 5; i++) padSend(Object.assign({ op: 'scroll', dy: dir }, lastUV || { u: 0.5, v: 0.5 })); };
+  $('#mir-up').addEventListener('click', scrollKey(1));
+  $('#mir-down').addEventListener('click', scrollKey(-1));
   window.addEventListener('resize', () => layout());
   return {
     run(on) {
@@ -1862,7 +1882,7 @@ const mir = (() => {
       running = on;
       if (on) { gen++; loop(gen); }
     },
-    reset() { zoom = 1; ox = oy = 0; seq = 0; $('#mir-wait').classList.remove('hidden'); },
+    reset() { zoom = 1; ox = oy = 0; seq = 0; lastUV = null; $('#mir-wait').classList.remove('hidden'); },
     toUV, layout,
   };
 })();
