@@ -168,7 +168,7 @@ h3 small { font: 700 20px var(--round); color: var(--dim); }
 
 /* storage network (Tom's) */
 #net { flex: 0 1 auto; max-height: 46%; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
-#net-grid { flex: 0 1 auto; min-height: 100px; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, 100px); grid-auto-rows: 100px; gap: 6px; align-content: start; }
+#pack-grid, #net-grid { flex: 0 1 auto; min-height: 100px; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, 100px); grid-auto-rows: 100px; gap: 6px; align-content: start; }
 .ni { position: relative; background: #43474e; border-radius: 8px; overflow: hidden; box-shadow: inset 3px 3px 0 var(--slot-lo), inset -3px -3px 0 var(--slot-hi); }
 .ni img { position: absolute; inset: 9%; width: 82%; height: 82%; image-rendering: pixelated; pointer-events: none; }
 .ni .txt { position: absolute; inset: 6px; font: 800 16px/1.05 var(--round); color: var(--dim); overflow: hidden; pointer-events: none; }
@@ -327,6 +327,14 @@ details .keys { padding: 4px 0 14px; }
 .bi .pack { display: inline-block; margin-left: 6px; padding: 1px 10px; border-radius: 999px; border: 2px solid var(--ink); background: #c9e6ff; font: 800 16px var(--round); color: var(--ink); }
 .bi .why { font: 700 20px var(--round); color: #6b4a00; }
 .bi .tg { display: flex; flex-wrap: wrap; gap: 10px; }
+.bi .row1 > div:nth-child(2) { flex: 1; min-width: 0; }
+.bi .chance { flex: none; min-width: 120px; padding: 6px 12px; border: 3px solid var(--ink); border-radius: 16px; box-shadow: 0 4px 0 var(--ink); text-align: center; color: var(--ink); }
+.bi .chance b { display: block; font: 600 38px/1 var(--pixel); }
+.bi .chance small { font: 800 16px var(--round); }
+#party-heal { font-weight: 800; }
+#party-heal:disabled { opacity: .45; }
+.heal-list { display: flex; flex-direction: column; gap: 6px; font: 700 24px var(--round); max-height: 420px; overflow: auto; }
+.heal-list .miss { color: #b3261e; }
 .bi .tg button { min-height: 80px; font-size: 24px; }
 .bi .tg button { display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 2px; min-width: 200px; }
 .bi .tg button small { font: 700 18px var(--round); color: #4f5563; }
@@ -431,7 +439,9 @@ details .keys { padding: 4px 0 14px; }
 .pk-h { margin: 6px 2px 0; font: 600 26px var(--pixel); color: var(--yellow); }
 
 /* ---------- menu mirror ---------- */
-#screenpad { position: absolute; inset: 0; z-index: 8; background: var(--screen-deep); border-radius: 14px; padding: 10px; display: flex; flex-direction: column; gap: 8px; }
+/* The mirror takes the whole screen under the status bar (tab rail included): the 16:9 picture is width-bound,
+   so every pixel of width is picture. Hide brings the tabs back. */
+#screenpad { position: fixed; left: 6px; right: 6px; top: 80px; bottom: 6px; z-index: 30; background: var(--screen-deep); border-radius: 14px; padding: 8px; display: flex; flex-direction: column; gap: 6px; }
 #screenpad .sp-head { display: flex; align-items: center; gap: 10px; }
 #screenpad h2 { flex: 1; min-width: 0; margin: 0 4px; font: 600 30px/1.1 var(--pixel); color: var(--yellow); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #screenpad .sp-head button { min-height: 72px; }
@@ -441,7 +451,7 @@ details .keys { padding: 4px 0 14px; }
 #mirror { position: relative; flex: 1; min-height: 0; overflow: hidden; border-radius: 10px; background: #000; touch-action: none; }
 #mir-img { position: absolute; left: 0; top: 0; transform-origin: 0 0; image-rendering: pixelated; user-select: none; -webkit-user-drag: none; pointer-events: none; }
 #mir-wait { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font: 700 26px var(--round); color: var(--dim); pointer-events: none; }
-#mir-help { text-align: center; font-size: 20px; }
+#mir-help { text-align: center; font-size: 19px; margin: 0; }
 .ripple { position: absolute; width: 64px; height: 64px; margin: -32px 0 0 -32px; border-radius: 50%; border: 4px solid var(--yellow-hi);
   box-shadow: 0 0 0 3px rgba(0,0,0,.5); pointer-events: none; animation: ripple .35s ease-out forwards; }
 .ripple.right { border-color: var(--blue-hi); }
@@ -464,3 +474,10 @@ details .keys { padding: 4px 0 14px; }
 .slot.dragging, .pk.dragging { opacity: .35; }
 .slot.drop, .pk.drop { box-shadow: inset 0 0 0 5px var(--blue-hi), 0 0 0 2px var(--ink); z-index: 2; }
 #pc-main { touch-action: none; } /* the finger drags Pokémon, it doesn't scroll the page */
+
+/* Backpack view */
+#pack { flex: 0 1 auto; max-height: 52%; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+#pack.hidden { display: none; }
+#pack-info { flex: 1; }
+#pack-btn.on { background: linear-gradient(180deg, var(--yellow-hi), var(--yellow)); }
+#inv-search { min-width: 220px; }

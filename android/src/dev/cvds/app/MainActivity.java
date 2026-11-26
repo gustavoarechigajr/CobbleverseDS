@@ -1,13 +1,13 @@
 package dev.cvds.app;
 
 import android.app.Activity;
-import android.app.ActivityOptions;
+import android.app.ActivityManager;
 import android.content.Intent;
-import android.hardware.display.DisplayManager;
 import android.os.Bundle;
 import android.os.Handler;
 import android.os.Looper;
-import android.view.Display;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
 import android.view.View;
 import android.view.WindowManager;
 import android.webkit.JavascriptInterface;
@@ -32,11 +32,12 @@ public class MainActivity extends Activity {
 	private WebView web;
 	private boolean waiting;
 	private boolean probing;
+	private boolean paused; // hidden behind another app: no polling, no page timers (battery)
+	private Vibrator vibrator;
 
 	@Override
 	protected void onCreate(Bundle saved) {
 		super.onCreate(saved);
-		if (moveToSecondScreen()) return;
 		// No FLAG_KEEP_SCREEN_ON: the game keeps the device awake while it runs (OLED care).
 		getWindow().addFlags(WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE);
 		web = new WebView(this);
@@ -62,32 +63,9 @@ public class MainActivity extends Activity {
 			}
 		});
 		setContentView(web);
+		vibrator = getSystemService(Vibrator.class);
 		showWaiting();
 		probe();
-	}
-
-	/**
-	 * Started from the main screen: relaunch on the Thor's bottom (presentation) display.
-	 * Returns true if this instance is finishing because of that.
-	 */
-	private boolean moveToSecondScreen() {
-		if (getIntent().getBooleanExtra(EXTRA_PLACED, false)) return false;
-		Display here = getWindowManager().getDefaultDisplay();
-		if (here.getDisplayId() != Display.DEFAULT_DISPLAY) return false;
-		DisplayManager dm = getSystemService(DisplayManager.class);
-		Display[] others = dm.getDisplays(DisplayManager.DISPLAY_CATEGORY_PRESENTATION);
-		if (others.length == 0) return false;
-		try {
-			Intent i = new Intent(this, MainActivity.class)
-				.putExtra(EXTRA_PLACED, true)
-				.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_MULTIPLE_TASK);
-			ActivityOptions opts = ActivityOptions.makeBasic().setLaunchDisplayId(others[0].getDisplayId());
-			startActivity(i, opts.toBundle());
-			finish();
-			return true;
-		} catch (RuntimeException e) {
-			return false; // not allowed on this device: just run where we are
-		}
 	}
 
 	private void showWaiting() {
@@ -118,7 +96,7 @@ public class MainActivity extends Activity {
 			}
 			boolean ok = up;
 			handler.post(() -> {
-				if (isFinishing() || isDestroyed()) { probing = false; return; }
+				if (isFinishing() || isDestroyed() || paused) { probing = false; return; } // onResume starts it again
 				if (ok) {
 					probing = false;
 					waiting = false;
@@ -131,10 +109,23 @@ public class MainActivity extends Activity {
 		}, "cvds-probe").start();
 	}
 
+	/**
+	 * Launched again while already running (launcher icon, adb): the single instance may sit behind the
+	 * bottom screen's home, so bring its task to the front of whatever display it is on.
+	 */
+	@Override
+	protected void onNewIntent(Intent intent) {
+		super.onNewIntent(intent);
+		try { getSystemService(ActivityManager.class).moveTaskToFront(getTaskId(), 0); } catch (RuntimeException ignored) {}
+	}
+
 	@Override
 	protected void onResume() {
 		super.onResume();
+		paused = false;
 		if (web != null) {
+			web.resumeTimers();
+			if (waiting && !probing) probe();
 			web.setSystemUiVisibility(View.SYSTEM_UI_FLAG_FULLSCREEN | View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
 				| View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY | View.SYSTEM_UI_FLAG_LAYOUT_STABLE);
 			web.onResume();
@@ -157,6 +148,8 @@ public class MainActivity extends Activity {
 	@Override
 	protected void onPause() {
 		setFocusable(false);
+		paused = true;
+		if (web != null) { web.onPause(); web.pauseTimers(); } // stops the page's polling while hidden
 		super.onPause();
 	}
 
@@ -164,6 +157,16 @@ public class MainActivity extends Activity {
 		@JavascriptInterface
 		public void setFocusable(boolean focusable) {
 			handler.post(() -> MainActivity.this.setFocusable(focusable));
+		}
+
+		/** A short tick for taps ("tick") or a firmer one for long-presses ("heavy"). */
+		@JavascriptInterface
+		public void haptic(String kind) {
+			if (vibrator == null || !vibrator.hasVibrator()) return;
+			try {
+				int effect = "heavy".equals(kind) ? VibrationEffect.EFFECT_HEAVY_CLICK : VibrationEffect.EFFECT_TICK;
+				vibrator.vibrate(VibrationEffect.createPredefined(effect));
+			} catch (RuntimeException ignored) {}
 		}
 	}
 }

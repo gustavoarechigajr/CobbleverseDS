@@ -29,6 +29,7 @@
       <div class="bar">
         <input id="inv-search" type="search" placeholder="Find item" autocomplete="off">
         <button id="more" class="hidden">More…</button>
+        <button id="pack-btn" class="sc hidden"><img src="/api/icon/sophisticatedbackpacks:backpack" alt="" onerror="this.remove()">Backpack</button>
         <div class="shortcuts" data-sc="storage"></div>
       </div>
       <div class="bar" id="bulk">
@@ -54,6 +55,17 @@
         <div id="net-grid"></div>
         <div class="note">Tap = take a stack · hold for more (take one, pin) · hold an item below to store it</div>
       </div>
+      <!-- Backpack view: what the carried backpacks hold, moved to/from the inventory without opening them -->
+      <div id="pack" class="hidden">
+        <div class="bar">
+          <input id="pack-search" type="search" placeholder="Search your backpacks" autocomplete="off">
+          <span id="pack-info" class="note"></span>
+          <button id="pack-game" data-kb="keybind.sophisticatedbackpacks.open_backpack">Open in game</button>
+          <button id="pack-close">Close</button>
+        </div>
+        <div id="pack-grid"></div>
+        <div class="note">Tap = take a stack · hold for more (one, all) · inventory item → Options → Put all in backpack</div>
+      </div>
       <div id="grid-wrap"><div id="screen-title"></div><div id="grid"></div></div>
     </section>
     <section id="tab-craft" class="tab">
@@ -69,7 +81,7 @@
     </section>
     <section id="tab-party" class="tab">
       <div id="party" class="party"></div>
-      <div class="bar"><div class="shortcuts" data-sc="party"></div><span class="note">Tap a Pokémon for its page · drag one onto another slot to reorder</span></div>
+      <div class="bar"><button id="party-heal" class="sc" disabled><img src="/api/icon/cobblemon:potion" alt="" onerror="this.remove()">Heal party</button><div class="shortcuts" data-sc="party"></div><span class="note">Tap a Pokémon for its page · drag one onto another slot to reorder</span></div>
     </section>
     <section id="tab-pc" class="tab">
       <div class="bar">

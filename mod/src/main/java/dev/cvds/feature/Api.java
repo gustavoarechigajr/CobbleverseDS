@@ -45,7 +45,7 @@ public final class Api implements dev.cvds.net.MiniHttpServer.Handler {
 			if (p.length != 3) return Response.notFound();
 			String dim = java.net.URLDecoder.decode(p[0], java.nio.charset.StandardCharsets.UTF_8);
 			byte[] png = MapTiles.png(dim, Integer.parseInt(p[1]), Integer.parseInt(p[2]));
-			return png == null ? Response.notFound() : new Response(200, "image/png", png, Map.of("Cache-Control", "no-cache"));
+			return png == null ? Response.notFound() : new Response(200, "image/png", png, Map.of("Cache-Control", "no-store"));
 		}
 		if (path.startsWith("/api/icon/")) {
 			byte[] png = Icons.get(path.substring("/api/icon/".length()), 3000);
@@ -97,6 +97,13 @@ public final class Api implements dev.cvds.net.MiniHttpServer.Handler {
 				if (req.method().equals("POST"))
 					return Response.json(BattleBag.act(mc, JsonParser.parseString(req.bodyText()).getAsJsonObject()).toString());
 				return Response.json(BattleBag.list(mc).toString());
+			}
+			case "/api/pack": {
+				// Backpack view: like the bag, it works on the integrated server and waits here.
+				if (mc.player == null) return Response.json(error("not in game").toString());
+				if (req.method().equals("POST"))
+					return Response.json(BackpackView.act(mc, JsonParser.parseString(req.bodyText()).getAsJsonObject()).toString());
+				return Response.json(BackpackView.list(mc).toString());
 			}
 			case "/api/map": return onClient(mc, () -> MapApi.info(mc));
 			case "/api/pokemon": {

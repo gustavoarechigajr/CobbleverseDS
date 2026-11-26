@@ -164,9 +164,9 @@ class H(BaseHTTPRequestHandler):
                      "targets": [{"id": "a", "name": "Pikachu", "hp": 51, "maxHp": 58}, {"id": "b", "name": "Lucario", "hp": 30, "maxHp": 96}]},
                     {"k": "cobblemon:full_heal", "name": "Full Heal", "inv": 0, "pack": 3, "inGame": False, "targets": []},
                     {"k": "cobblemon:ether", "name": "Ether", "inv": 1, "pack": 0, "inGame": True, "targets": []}],
-          "balls": [{"k": "cobblemon:poke_ball", "name": "Poké Ball", "inv": 8, "pack": 24},
-                    {"k": "cobblemon:great_ball", "name": "Great Ball", "inv": 0, "pack": 6},
-                    {"k": "cobblemon:ultra_ball", "name": "Ultra Ball", "inv": 3, "pack": 0}]})
+          "balls": [{"k": "cobblemon:poke_ball", "name": "Poké Ball", "inv": 8, "pack": 24, "chance": 9},
+                    {"k": "cobblemon:great_ball", "name": "Great Ball", "inv": 0, "pack": 6, "chance": 22},
+                    {"k": "cobblemon:ultra_ball", "name": "Ultra Ball", "inv": 3, "pack": 0, "chance": 41}]})
         if p == "/api/battle": return self.send(200, battle() if args.battle else {"active": False})
         if p == "/api/spawns": return self.send(200, SPAWNS)
         if p == "/api/terminal":

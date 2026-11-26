@@ -11,9 +11,15 @@ final class MapApi {
 	static JsonObject info(Minecraft mc) {
 		if (mc.player == null || mc.level == null) return Api.error("not in game");
 		JsonObject o = Api.ok();
-		String dim = MapTiles.dimId(mc.level);
+		String dim = MapTiles.layerKey(mc.level); // the surface, or the cave layer you are in
 		o.addProperty("dim", dim);
 		o.addProperty("mappable", MapTiles.mappable(mc.level));
+		int band = MapTiles.caveBand();
+		if (band != Integer.MIN_VALUE) {
+			o.addProperty("cave", true);
+			o.addProperty("caveFrom", Math.max(mc.level.getMinBuildHeight(), band * MapTiles.BAND + MapTiles.BAND - 1 - MapTiles.CAVE_SCAN));
+			o.addProperty("caveTo", band * MapTiles.BAND + MapTiles.BAND - 1);
+		}
 		o.addProperty("x", mc.player.getX());
 		o.addProperty("z", mc.player.getZ());
 		o.addProperty("yaw", mc.player.getYRot());
@@ -35,7 +41,9 @@ final class MapApi {
 			case "addWaypoint" -> {
 				int x = a.get("x").getAsInt(), z = a.get("z").getAsInt();
 				String name = a.has("name") ? a.get("name").getAsString() : "Waypoint";
-				return Waypoints.add(x, MapTiles.surfaceY(mc, x, z), z, name);
+				// on a cave map the spot is down here with you, not on the surface above
+				int y = MapTiles.caveBand() != Integer.MIN_VALUE && mc.player != null ? mc.player.getBlockY() : MapTiles.surfaceY(mc, x, z);
+				return Waypoints.add(x, y, z, name);
 			}
 			case "removeWaypoint" -> { return Waypoints.remove(a.get("i").getAsInt()); }
 			case "teleport" -> {

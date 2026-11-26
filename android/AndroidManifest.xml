@@ -1,21 +1,32 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     package="dev.cvds.app"
-    android:versionCode="1"
-    android:versionName="0.1.0">
+    android:versionCode="2"
+    android:versionName="0.2.0">
     <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.VIBRATE" />
+    <uses-permission android:name="android.permission.REORDER_TASKS" />
     <application
         android:label="Cobbleverse DS"
         android:icon="@android:drawable/sym_def_app_icon"
         android:usesCleartextTraffic="true"
         android:resizeableActivity="true"
         android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+        <!-- The panel: one instance, placed on the bottom screen by LaunchActivity (or adb with -display 4). -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
             android:launchMode="singleTask"
             android:resizeableActivity="true"
-            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|density|uiMode">
+            android:configChanges="orientation|screenSize|smallestScreenSize|screenLayout|keyboard|keyboardHidden|navigation|density|uiMode" />
+        <!-- The app icon: an invisible trampoline that opens the panel on the bottom screen. -->
+        <activity
+            android:name=".LaunchActivity"
+            android:exported="true"
+            android:theme="@android:style/Theme.NoDisplay"
+            android:excludeFromRecents="true"
+            android:noHistory="true"
+            android:taskAffinity="dev.cvds.app.launch">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

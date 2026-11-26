@@ -1,5 +1,7 @@
 package dev.cvds.feature;
 
+import com.cobblemon.mod.common.Cobblemon;
+import com.cobblemon.mod.common.CobblemonEntities;
 import com.cobblemon.mod.common.api.battles.model.PokemonBattle;
 import com.cobblemon.mod.common.api.battles.model.actor.ActorType;
 import com.cobblemon.mod.common.api.battles.model.actor.BattleActor;
@@ -10,11 +12,16 @@ import com.cobblemon.mod.common.battles.BagItemActionResponse;
 import com.cobblemon.mod.common.battles.BagItems;
 import com.cobblemon.mod.common.battles.BattleRegistry;
 import com.cobblemon.mod.common.battles.pokemon.BattlePokemon;
+import com.cobblemon.mod.common.entity.pokeball.EmptyPokeBallEntity;
 import com.cobblemon.mod.common.entity.pokemon.PokemonEntity;
 import com.cobblemon.mod.common.item.PokeBallItem;
 import com.cobblemon.mod.common.item.battle.BagItem;
 import com.cobblemon.mod.common.item.battle.BagItemLike;
+import com.cobblemon.mod.common.item.interactive.PotionItem;
 import com.cobblemon.mod.common.item.interactive.ReviveItem;
+import com.cobblemon.mod.common.item.interactive.StatusCureItem;
+import com.cobblemon.mod.common.pokeball.PokeBall;
+import com.cobblemon.mod.common.pokemon.Pokemon;
 import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import java.util.*;
@@ -101,6 +108,7 @@ final class BattleBag {
 			o.addProperty("wild", battle != null && wildTarget(battle) != null);
 			o.addProperty("canAct", actor != null && actor.canFitForcedAction());
 			o.addProperty("backpacks", Backpacks.LOADED);
+			PokemonEntity wild = battle != null ? wildTarget(battle) : null;
 			// Group identical items: one entry per item key with counts per source.
 			Map<String, JsonObject> items = new LinkedHashMap<>(), balls = new LinkedHashMap<>();
 			for (Found f : scan(sp)) {
@@ -116,6 +124,10 @@ final class BattleBag {
 					n.addProperty("name", s.getHoverName().getString());
 					n.addProperty("inv", 0);
 					n.addProperty("pack", 0);
+					if (ball && wild != null) {
+						int c = catchChance(sp, ((PokeBallItem) s.getItem()).getPokeBall(), wild);
+						if (c >= 0) n.addProperty("chance", c);
+					}
 					if (!ball) {
 						n.addProperty("inGame", needsMove); // PP items need a move choice: use them in game
 						JsonArray ts = new JsonArray();
@@ -168,11 +180,12 @@ final class BattleBag {
 
 	static JsonObject act(Minecraft mc, JsonObject a) throws Exception {
 		String op = a.get("op").getAsString();
-		String key = a.get("k").getAsString();
+		String key = a.has("k") ? a.get("k").getAsString() : "";
 		JsonObject r = onServer(mc, sp -> switch (op) {
 			case "use" -> use(sp, key, a.get("target").getAsString());
 			case "equip" -> equip(sp, key);
 			case "throw" -> throwBall(sp, key);
+			case "heal" -> healParty(sp);
 			default -> Api.error("unknown bag op " + op);
 		});
 		// Turn the camera to where the ball went, so the throw reads on screen.
@@ -235,6 +248,120 @@ final class BattleBag {
 		}
 		inv.setChanged();
 		return Api.ok();
+	}
+
+	// ---------- catch chance ----------
+
+	static final int CATCH_TRIALS = 1200; // ±2 points; cached below so the number holds still between turns
+	private static final Map<String, Integer> CATCH_CACHE = new HashMap<>();
+
+	/**
+	 * Chance (0-100) that one throw of this ball catches the wild Pokémon right now: Cobblemon's own capture
+	 * calculator (whatever the pack configures) run on a throwaway ball that is never added to the world, so
+	 * HP, status, level, ball bonuses and critical captures all count exactly as they will. -1 if it can't tell.
+	 */
+	static int catchChance(ServerPlayer sp, PokeBall ball, PokemonEntity target) {
+		try {
+			if (ball.getCatchRateModifier().isGuaranteed()) return 100;
+			var p = target.getPokemon();
+			String key = ball.getName() + "|" + target.getUUID() + "|" + p.getCurrentHealth() + "|" + (p.getStatus() == null ? "" : p.getStatus().getStatus().getName());
+			synchronized (CATCH_CACHE) {
+				Integer c = CATCH_CACHE.get(key);
+				if (c != null) return c;
+				if (CATCH_CACHE.size() > 64) CATCH_CACHE.clear();
+			}
+			var calc = Cobblemon.INSTANCE.getConfig().getCaptureCalculator();
+			var probe = new EmptyPokeBallEntity(ball, sp.level(), sp, CobblemonEntities.EMPTY_POKEBALL);
+			int caught = 0;
+			for (int i = 0; i < CATCH_TRIALS; i++) if (calc.processCapture(sp, probe, target).isSuccessfulCapture()) caught++;
+			int pct = Math.round(caught * 100f / CATCH_TRIALS);
+			synchronized (CATCH_CACHE) { CATCH_CACHE.put(key, pct); }
+			return pct;
+		} catch (Throwable e) {
+			return -1;
+		}
+	}
+
+	// ---------- heal the party from the bag (outside battle) ----------
+
+	/** Default heal amounts of Potion, Super, Hyper, Max Potion, Full Restore (the last two heal fully). */
+	private static final int[] POTION_HEAL = {20, 60, 120, Integer.MAX_VALUE, Integer.MAX_VALUE};
+
+	/**
+	 * Revives, heals and cures every party Pokémon that needs it with the cheapest item that does the job,
+	 * from the inventory and backpacks: Revive before Max Revive, the smallest potion that covers the missing
+	 * HP (else the biggest there is), a matching status cure before Full Heal.
+	 */
+	private static JsonObject healParty(ServerPlayer sp) throws Exception {
+		if (BattleRegistry.getBattleByParticipatingPlayer(sp) != null) return Api.error("finish the battle first (use the Bag there)");
+		JsonArray used = new JsonArray(), missingItems = new JsonArray();
+		for (Pokemon p : Cobblemon.INSTANCE.getStorage().getParty(sp)) {
+			String name = p.getDisplayName(false).getString();
+			if (p.isFainted()) {
+				Found f = best(sp, s -> s.getItem() instanceof ReviveItem r ? (r.getMax() ? 1 : 0) : -1);
+				if (f == null) { missingItems.add(name + " needs a Revive"); continue; }
+				String item = itemName(f);
+				useOne(sp, f, stack -> {
+					boolean max = ((ReviveItem) stack.getItem()).getMax();
+					p.setCurrentHealth(max ? p.getMaxHealth() : (int) Math.ceil(p.getMaxHealth() / 2f));
+					if (!sp.isCreative()) stack.shrink(1);
+				});
+				used.add(item + " → " + name);
+			}
+			for (int guard = 0; guard < 4 && !p.isFainted() && p.getCurrentHealth() < p.getMaxHealth(); guard++) {
+				int missing = p.getMaxHealth() - p.getCurrentHealth();
+				// the smallest potion that covers the missing HP first, then bigger ones, then smaller ones
+				Found f = best(sp, s -> {
+					if (!(s.getItem() instanceof PotionItem pi) || !pi.canUseOnPokemon(s, p)) return -1;
+					int o = pi.getType().ordinal(), heal = POTION_HEAL[Math.min(o, POTION_HEAL.length - 1)];
+					return heal >= missing ? o : 100 - o;
+				});
+				if (f == null) { if (guard == 0) missingItems.add(name + " needs a Potion"); break; }
+				String item = itemName(f);
+				int before = p.getCurrentHealth();
+				useOne(sp, f, stack -> ((PotionItem) stack.getItem()).applyToPokemon(sp, stack, p));
+				if (p.getCurrentHealth() <= before) break;
+				used.add(item + " → " + name);
+			}
+			if (!p.isFainted() && p.getStatus() != null) {
+				Found f = best(sp, s -> s.getItem() instanceof StatusCureItem c && c.canUseOnPokemon(s, p)
+					? (ItemKeys.key(s).contains("full_heal") ? 1 : 0) : -1);
+				if (f == null) { missingItems.add(name + " needs a status cure"); continue; }
+				String item = itemName(f);
+				useOne(sp, f, stack -> ((StatusCureItem) stack.getItem()).applyToPokemon(sp, stack, p));
+				used.add(item + " → " + name);
+			}
+		}
+		JsonObject r = Api.ok();
+		r.add("used", used);
+		r.add("missing", missingItems);
+		return r;
+	}
+
+	private interface Rank { int of(ItemStack s); }
+	private interface Apply { void on(ItemStack s) throws Exception; }
+
+	/** The lowest-ranked usable stack (rank < 0 = not usable); inventory before backpacks on ties. */
+	private static Found best(ServerPlayer sp, Rank rank) {
+		Found best = null;
+		int bestR = Integer.MAX_VALUE;
+		for (Found f : scan(sp)) {
+			int r = rank.of(f.stack());
+			if (r < 0) continue;
+			if (r < bestR || (r == bestR && best != null && best.inPack() && !f.inPack())) { best = f; bestR = r; }
+		}
+		return best;
+	}
+
+	private static String itemName(Found f) { return f.stack().getHoverName().getString(); }
+
+	/** Uses one item where it is (inventory) or takes one out of the backpack and returns it if unused. */
+	private static void useOne(ServerPlayer sp, Found f, Apply apply) throws Exception {
+		ItemStack stack = f.inPack() ? Backpacks.extract(f.pack(), 1) : f.stack();
+		if (stack.isEmpty()) return;
+		apply.on(stack);
+		if (f.inPack() && !stack.isEmpty()) giveBack(sp, f, stack);
+		sp.getInventory().setChanged();
 	}
 
 	static PokemonEntity wildTarget(PokemonBattle battle) {

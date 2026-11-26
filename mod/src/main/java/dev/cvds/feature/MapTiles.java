@@ -23,12 +23,19 @@ import net.minecraft.world.level.material.MapColor;
 /**
  * A top-down map of explored terrain for the panel's Map tab, drawn from the chunks the client has
  * loaded (like a vanilla map: block map colours, hill shading, water depth). 256×256-block tiles,
- * one pixel per block, saved as PNG under {@code cvds-map/<world>/<dimension>/}. Surface dimensions only.
+ * one pixel per block, saved as PNG under {@code cvds-map/<world>/<layer>/}.
+ *
+ * Layers: the surface of open dimensions ({@code minecraft:overworld}), plus cave layers keyed by a 16-block
+ * height band ({@code minecraft:overworld~c-3}) drawn while you are underground, and always in dimensions with
+ * a ceiling (the Nether). A cave layer shows the floor under the air at that height; solid rock is dark.
  */
 public final class MapTiles {
 	private MapTiles() {}
 	static final int TILE = 256;
 	static final int CHUNKS_PER_TICK = 6;
+	static final int BAND = 16;          // cave layers: one per 16 blocks of height
+	static final int CAVE_SCAN = 64;     // how far down a cave column is searched
+	static final int ROCK = 0xFF33333B;  // solid rock in a cave layer: darker than any floor, lighter than the panel background
 	static final long SAVE_EVERY_MS = 30_000;
 
 	static final class Tile {
@@ -44,15 +51,39 @@ public final class MapTiles {
 	private static volatile Path dir;          // folder of the current world
 	private static volatile String worldId;
 	private static long lastSave = 0, lastNearby = 0;
+	private static volatile int caveBand = Integer.MIN_VALUE; // the cave layer being drawn (MIN_VALUE = none)
 
 	static String key(String dim, int tx, int tz) { return dim + "|" + tx + "|" + tz; }
 	static String dimId(ClientLevel l) { return l.dimension().location().toString(); }
-	static boolean mappable(ClientLevel l) { return l != null && !l.dimensionType().hasCeiling(); }
+	static boolean mappable(ClientLevel l) { return l != null; }
+	static boolean hasSurface(ClientLevel l) { return l != null && !l.dimensionType().hasCeiling(); }
+	static String caveKey(String dim, int band) { return dim + "~c" + band; }
+
+	/** The layer the panel should show now: the cave band you are in, else the surface. */
+	static String layerKey(ClientLevel l) {
+		int b = caveBand;
+		return b == Integer.MIN_VALUE ? dimId(l) : caveKey(dimId(l), b);
+	}
+	static int caveBand() { return caveBand; }
+
+	/**
+	 * The cave band to draw, or MIN_VALUE for none: always in a ceiling dimension, else while the sky is out of
+	 * sight and the surface is well above you. Keeps the current band until you are 4 blocks outside it.
+	 */
+	private static int pickBand(Minecraft mc, ClientLevel level) {
+		BlockPos p = mc.player.blockPosition();
+		boolean under = !hasSurface(level)
+			|| (!level.canSeeSky(p.above()) && p.getY() < level.getHeight(Heightmap.Types.WORLD_SURFACE, p.getX(), p.getZ()) - 6);
+		if (!under) return Integer.MIN_VALUE;
+		int cur = caveBand, y = p.getY();
+		if (cur != Integer.MIN_VALUE && y >= cur * BAND - 4 && y <= cur * BAND + BAND - 1 + 4) return cur;
+		return Math.floorDiv(y, BAND);
+	}
 
 	// ---------- lifecycle ----------
 
 	public static void onChunkLoad(ClientLevel level, LevelChunk chunk) {
-		if (!mappable(level)) return;
+		if (!hasSurface(level) && caveBand == Integer.MIN_VALUE) return;
 		synchronized (QUEUE) { QUEUE.add(chunk.getPos().toLong()); }
 	}
 
@@ -61,15 +92,23 @@ public final class MapTiles {
 		if (level == null || mc.player == null) { if (worldId != null) leaveWorld(); return; }
 		String id = currentWorldId(mc);
 		if (!id.equals(worldId)) enterWorld(mc, id);
-		if (!mappable(level)) return;
 		long now = System.currentTimeMillis();
+		int band = pickBand(mc, level);
+		if (band != caveBand) {
+			caveBand = band;
+			// a new layer: draw what's loaded around you into it
+			ChunkPos c = mc.player.chunkPosition();
+			if (band != Integer.MIN_VALUE)
+				synchronized (QUEUE) { for (int dx = -6; dx <= 6; dx++) for (int dz = -6; dz <= 6; dz++) QUEUE.add(ChunkPos.asLong(c.x + dx, c.z + dz)); }
+		}
 		// Blocks change where you are: redraw the chunks around you every 10 s.
 		if (now - lastNearby > 10_000) {
 			lastNearby = now;
 			ChunkPos c = mc.player.chunkPosition();
 			synchronized (QUEUE) { for (int dx = -3; dx <= 3; dx++) for (int dz = -3; dz <= 3; dz++) QUEUE.add(ChunkPos.asLong(c.x + dx, c.z + dz)); }
 		}
-		for (int n = 0; n < CHUNKS_PER_TICK; n++) {
+		int perTick = caveBand == Integer.MIN_VALUE ? CHUNKS_PER_TICK : CHUNKS_PER_TICK / 2; // caves cost more
+		for (int n = 0; n < perTick; n++) {
 			long cp;
 			synchronized (QUEUE) {
 				Iterator<Long> it = QUEUE.iterator();
@@ -79,7 +118,10 @@ public final class MapTiles {
 			}
 			int cx = ChunkPos.getX(cp), cz = ChunkPos.getZ(cp);
 			LevelChunk chunk = level.getChunkSource().getChunk(cx, cz, false);
-			if (chunk != null && !chunk.isEmpty()) renderChunk(level, chunk);
+			if (chunk == null || chunk.isEmpty()) continue;
+			if (hasSurface(level)) renderChunk(level, chunk);
+			int b = caveBand;
+			if (b != Integer.MIN_VALUE) renderCave(level, chunk, b);
 		}
 		if (now - lastSave > SAVE_EVERY_MS) { lastSave = now; saveDirty(); }
 	}
@@ -113,6 +155,7 @@ public final class MapTiles {
 		TILES.clear();
 		ON_DISK.clear();
 		synchronized (QUEUE) { QUEUE.clear(); }
+		caveBand = Integer.MIN_VALUE;
 		worldId = null;
 		dir = null;
 	}
@@ -160,6 +203,56 @@ public final class MapTiles {
 			}
 		}
 		if (changed) { t.ver++; t.dirty = true; }
+	}
+
+	/** A cave layer: per column, the floor under the first air at or below the band's top; solid rock is dark. */
+	private static void renderCave(ClientLevel level, LevelChunk chunk, int band) {
+		String key = caveKey(dimId(level), band);
+		int bx = chunk.getPos().getMinBlockX(), bz = chunk.getPos().getMinBlockZ();
+		Tile t = tile(key, Math.floorDiv(bx, TILE), Math.floorDiv(bz, TILE), true);
+		int ox = Math.floorMod(bx, TILE), oz = Math.floorMod(bz, TILE);
+		int top = band * BAND + BAND - 1, bottom = Math.max(level.getMinBuildHeight(), top - CAVE_SCAN);
+		BlockPos.MutableBlockPos pos = new BlockPos.MutableBlockPos();
+		// floor heights for this chunk plus the row to the north (for hill shading); MIN_VALUE = solid rock
+		int[] floor = new int[17 * 16];
+		BlockState[] state = new BlockState[16 * 16];
+		for (int lz = -1; lz < 16; lz++)
+			for (int lx = 0; lx < 16; lx++) {
+				int y = top;
+				pos.set(bx + lx, y, bz + lz);
+				BlockState st = lz < 0 ? level.getBlockState(pos) : chunk.getBlockState(pos);
+				while (!open(st, level, pos) && y > bottom) { y--; pos.setY(y); st = lz < 0 ? level.getBlockState(pos) : chunk.getBlockState(pos); }
+				while (open(st, level, pos) && y > bottom) { y--; pos.setY(y); st = lz < 0 ? level.getBlockState(pos) : chunk.getBlockState(pos); }
+				boolean found = y > bottom && !open(st, level, pos) && y < top;
+				floor[(lz + 1) * 16 + lx] = found ? y : Integer.MIN_VALUE;
+				if (lz >= 0) state[lz * 16 + lx] = found ? st : null;
+			}
+		boolean changed = false;
+		for (int lz = 0; lz < 16; lz++)
+			for (int lx = 0; lx < 16; lx++) {
+				int y = floor[(lz + 1) * 16 + lx], north = floor[lz * 16 + lx];
+				BlockState st = state[lz * 16 + lx];
+				int argb;
+				if (st == null) argb = ROCK;
+				else {
+					pos.set(bx + lx, y, bz + lz);
+					MapColor col = st.getMapColor(level, pos);
+					if (col == MapColor.NONE) argb = ROCK;
+					else {
+						int shade = north == Integer.MIN_VALUE || y == north ? 220 : y > north ? 255 : 180;
+						int rgb = col.col;
+						argb = 0xFF000000 | (((rgb >> 16) & 0xFF) * shade / 255) << 16 | (((rgb >> 8) & 0xFF) * shade / 255) << 8 | ((rgb & 0xFF) * shade / 255);
+					}
+				}
+				int i = (oz + lz) * TILE + (ox + lx);
+				if (t.argb[i] != argb) { t.argb[i] = argb; changed = true; }
+			}
+		if (changed) { t.ver++; t.dirty = true; }
+	}
+
+	/** Air, or something with no map colour you can stand in (torches, grass, vines). */
+	private static boolean open(BlockState st, ClientLevel level, BlockPos pos) {
+		return st.isAir() || (st.getFluidState().isEmpty() && st.getCollisionShape(level, pos).isEmpty() && st.getMapColor(level, pos) == MapColor.NONE);
 	}
 
 	// ---------- tiles: memory, disk, PNG ----------

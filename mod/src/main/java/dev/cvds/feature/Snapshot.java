@@ -61,8 +61,12 @@ public final class Snapshot {
 		}
 	}
 
+	/** Changes every game launch: the panel reloads its page when it does, so a mod update reaches it. */
+	static final long BOOT = System.currentTimeMillis();
+
 	static JsonObject build(Minecraft mc) {
 		JsonObject o = new JsonObject();
+		o.addProperty("boot", BOOT);
 		boolean inGame = mc.player != null && mc.level != null;
 		o.addProperty("inGame", inGame);
 		if (!inGame) {

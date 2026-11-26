@@ -2,11 +2,14 @@
 # Builds the bottom-screen wrapper APK with plain SDK tools (no Gradle).
 set -euo pipefail
 cd "$(dirname "$0")"
-SDK=${ANDROID_SDK:-${ANDROID_HOME:-$HOME/android-dev/sdk}}  # needs build-tools 35.0.0 + platforms/android-33
-BT=$SDK/build-tools/35.0.0
-PLAT=$SDK/platforms/android-33/android.jar
-export JAVA_HOME=${JAVA_HOME:-$HOME/android-dev/jdk17}  # any JDK 17+
-export PATH=$JAVA_HOME/bin:$PATH
+# Any SDK with build-tools 34+ and a platform 33+ works; the newest installed of each is used.
+SDK=${ANDROID_SDK:-${ANDROID_HOME:-}}
+for d in "$SDK" "$HOME/android-dev/sdk" "$HOME/Android/Sdk"; do [ -n "$d" ] && [ -d "$d/build-tools" ] && { SDK=$d; break; }; done
+BT=$(ls -d "$SDK"/build-tools/* | sort -V | tail -1)
+PLAT=$(ls -d "$SDK"/platforms/android-* | sort -V | tail -1)/android.jar
+# JDK 17+: $JAVA_HOME, the old ~/android-dev/jdk17, or whatever java is on PATH.
+if [ -z "${JAVA_HOME:-}" ] && [ -d "$HOME/android-dev/jdk17" ]; then export JAVA_HOME=$HOME/android-dev/jdk17; fi
+if [ -n "${JAVA_HOME:-}" ]; then export PATH=$JAVA_HOME/bin:$PATH; fi
 OUT=build
 rm -rf "$OUT" && mkdir -p "$OUT/classes" "$OUT/dex"
 "$BT/aapt2" link -o "$OUT/base.apk" --manifest AndroidManifest.xml -I "$PLAT" --min-sdk-version 26 --target-sdk-version 33

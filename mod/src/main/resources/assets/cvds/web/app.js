@@ -39,11 +39,14 @@ async function act(body) {
   }
 }
 
+let bootId = null;
 async function pollLoop() {
   for (;;) {
     try {
       const r = await fetch(`/api/state?rev=${rev}&wait=1500`);
       const s = await r.json();
+      // a new game launch (maybe a new mod build): reload so the page matches the mod
+      if (s.boot) { if (bootId && s.boot !== bootId) { location.reload(); return; } bootId = s.boot; }
       if (s.rev !== rev) {
         rev = s.rev;
         state = s;
@@ -251,6 +254,8 @@ function itemMenu(i) {
     { label: 'To hotbar…', sub: 'pick a slot 1–9', run: () => sheet('Put ' + name + ' in hotbar slot', null,
         [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => ({ label: String(n), run: () => { setSelected(null); act({ kind: 'inv', op: 'hotbar', slot: i, hotbar: n - 1, menu }); } }))) },
     { label: 'Move all like this', sub: 'every ' + name, run: () => { setSelected(null); act({ kind: 'inv', op: 'quickAll', group: s.g === 'c' ? 'c' : 'pc', key: s.k, menu }); } },
+    ...(packCount && s.g !== 'c' && !s.k.startsWith('sophisticatedbackpacks:') ? [{ label: 'Put all in backpack', sub: 'every ' + name + ' in your inventory',
+      run: () => { setSelected(null); packAct({ op: 'store', k: s.k }, n => `Put ${n} ${name} in your backpack`); } }] : []),
     { label: 'Drop one', run: () => { setSelected(null); act({ kind: 'inv', op: 'drop', slot: i, all: false, menu }); } },
     { label: 'Drop stack', run: () => { setSelected(null); act({ kind: 'inv', op: 'drop', slot: i, all: true, menu }); } },
   ]);
@@ -299,7 +304,7 @@ function gestures(container, itemSel, { canDrag, onTap, onLong, onDrop }) {
     timer = setTimeout(() => {
       if (!down || down.dragging) return;
       down.long = true;
-      if (navigator.vibrate) navigator.vibrate(30);
+      haptic('heavy');
       onLong && onLong(down.el);
     }, 450);
   });
@@ -465,7 +470,7 @@ function renderNet() {
     const el = e.target.closest('.ni');
     if (!el) return;
     k = el.dataset.k; long = false; sx = e.clientX; sy = e.clientY;
-    timer = setTimeout(() => { long = true; if (navigator.vibrate) navigator.vibrate(30); netMenu(k); }, 450);
+    timer = setTimeout(() => { long = true; haptic('heavy'); netMenu(k); }, 450);
   });
   const cancel = () => { clearTimeout(timer); timer = null; };
   g.addEventListener('pointermove', e => { if (Math.hypot(e.clientX - sx, e.clientY - sy) > 20) cancel(); });
@@ -477,6 +482,63 @@ function renderNet() {
   });
 })();
 $('#net-search').addEventListener('input', renderNet);
+
+// ---------- Backpack view (Sophisticated Backpacks the player carries) ----------
+let pack = null, packOpen = false, packCount = 0, packBusy = false;
+async function loadPack() {
+  try { pack = await api('/api/pack'); packCount = pack.packs || 0; }
+  catch { pack = null; packCount = 0; }
+  $('#pack-btn').classList.toggle('hidden', !packCount);
+  if (!packCount) packOpen = false;
+  renderShortcuts();
+  renderPack();
+}
+function renderPack() {
+  const box = $('#pack');
+  box.classList.toggle('hidden', !packOpen || !pack);
+  $('#pack-btn').classList.toggle('on', packOpen);
+  if (!packOpen || !pack) return;
+  const q = $('#pack-search').value.trim().toLowerCase();
+  const list = (pack.list || []).filter(e => !q || e.name.toLowerCase().includes(q) || e.k.includes(q)).sort((a, b) => b.n - a.n);
+  $('#pack-info').textContent = `${pack.packs} backpack${pack.packs === 1 ? '' : 's'} · ${pack.free}/${pack.slots} slots free`;
+  const html = list.map(e => `<div class="ni" data-pk="${esc(e.k)}" title="${esc(e.name)}"><img src="${iconUrl(e.k)}" alt="" onerror="this.remove()" onload="this.nextElementSibling.style.display='none'"><div class="txt">${esc(e.name)}</div><span class="n">${fmtCount(e.n)}</span></div>`).join('');
+  setHtml('#pack-grid', html || `<div class="note">${(pack.list || []).length ? 'Nothing matches.' : 'Your backpacks are empty.'}</div>`);
+}
+async function packAct(body, done) {
+  if (packBusy) return;
+  packBusy = true;
+  try { const r = await api('/api/pack', body); toast(done(r.moved || 0), true); }
+  catch (e) { toast(e.message); }
+  finally { packBusy = false; }
+  loadPack();
+}
+const packName = k => ((pack && pack.list || []).find(e => e.k === k) || {}).name || 'item';
+$('#pack-game').addEventListener('click', () => { packOpen = false; renderPack(); });
+const packTake = (k, amount) => packAct({ op: 'take', k, amount }, n => `Took ${n} ${packName(k)}`);
+$('#pack-btn').addEventListener('click', () => { packOpen = !packOpen; renderPack(); if (packOpen) loadPack(); });
+$('#pack-close').addEventListener('click', () => { packOpen = false; renderPack(); });
+$('#pack-search').addEventListener('input', renderPack);
+(() => {
+  const g = $('#pack-grid');
+  let timer = null, k = null, long = false, sx = 0, sy = 0;
+  g.addEventListener('pointerdown', e => {
+    const el = e.target.closest('.ni');
+    if (!el) return;
+    k = el.dataset.pk; long = false; sx = e.clientX; sy = e.clientY;
+    timer = setTimeout(() => { long = true; haptic('heavy'); sheet(packName(k), null, [
+      { label: 'Take a stack', run: () => packTake(k, 'stack') },
+      { label: 'Take one', run: () => packTake(k, 'one') },
+      { label: 'Take all', sub: 'as much as fits', run: () => packTake(k, 'all') },
+    ]); }, 450);
+  });
+  const cancel = () => { clearTimeout(timer); timer = null; };
+  g.addEventListener('pointermove', e => { if (Math.hypot(e.clientX - sx, e.clientY - sy) > 20) cancel(); });
+  g.addEventListener('pointercancel', cancel);
+  g.addEventListener('pointerup', () => { const was = timer != null; cancel(); if (!long && was && k) packTake(k, 'stack'); });
+})();
+// Open: refresh every 2.5 s. Closed: check every 15 s whether a backpack is carried (shows the button).
+let packTick = 0;
+setInterval(() => { if (tab === 'storage' && state && state.inGame && (packOpen || packTick++ % 6 === 0)) loadPack(); }, 2500);
 $('#net-sort').addEventListener('change', renderNet);
 setInterval(() => { if (tab === 'storage' && netActive()) loadNet(); else if (!netActive()) { $('#net').classList.add('hidden'); netSig = ''; } }, 700);
 
@@ -580,6 +642,8 @@ function renderShortcuts() {
       `<button class="sc" data-kb="${esc(id)}" title="${esc((keys.find(k => k.id === id) || {}).bound || '')}"><img src="${iconUrl(icon)}" alt="" onerror="this.remove()">${esc(label)}</button>`).join('');
     if (el.dataset.html !== html) { el.innerHTML = html; el.dataset.html = html; }
   });
+  // the Backpack view replaces the open-backpack key in the Storage bar (it has "Open in game" inside)
+  $$('.shortcuts[data-sc="storage"] [data-kb="keybind.sophisticatedbackpacks.open_backpack"]').forEach(b => b.classList.toggle('hidden', packCount > 0));
   // in battle the Battle-an-angry-Pokémon key makes no sense; outside one, the battle log doesn't either
   const inBattle = !!(battle && battle.active);
   $$('.shortcuts[data-sc="battle"] [data-kb]').forEach(b => b.classList.toggle('hidden', (b.dataset.kb === 'key.fightorflight.startbattle') === inBattle));
@@ -634,7 +698,7 @@ $('#key-favs').addEventListener('pointerdown', e => {
   const el = e.target.closest('.key');
   keyLongFired = false;
   if (!el) return;
-  keyLongTimer = setTimeout(() => { keyLongFired = true; if (navigator.vibrate) navigator.vibrate(30); keyFavMenu(el.dataset.key); }, 500);
+  keyLongTimer = setTimeout(() => { keyLongFired = true; haptic('heavy'); keyFavMenu(el.dataset.key); }, 500);
 });
 ['pointerup', 'pointercancel', 'pointerleave'].forEach(t => $('#key-favs').addEventListener(t, () => clearTimeout(keyLongTimer)));
 $('#key-sections').addEventListener('click', keySections);
@@ -661,8 +725,24 @@ $('#key-search').addEventListener('input', renderKeys);
 $('#key-refresh').addEventListener('click', () => loadKeys(true));
 
 // ---------- party ----------
+// Heal party: revives, potions and status cures from the inventory and backpacks, cheapest that does the job.
+$('#party-heal').addEventListener('click', async () => {
+  const b = $('#party-heal');
+  if (b.disabled) return;
+  b.disabled = true;
+  try {
+    const r = await api('/api/bag', { op: 'heal' });
+    const used = r.used || [], missing = r.missing || [];
+    if (!used.length && !missing.length) toast('Everyone is already healthy', true);
+    else sheet(used.length ? 'Party healed' : 'Couldn’t heal',
+      `<div class="heal-list">${used.map(u => `<div>✚ ${esc(u)}</div>`).join('')}${missing.map(m => `<div class="miss">✖ ${esc(m)}</div>`).join('')}</div>`);
+  } catch (e) { toast(e.message); }
+  setTimeout(renderParty, 600);
+});
 function renderParty() {
   const p = state.party;
+  // Heal party: only when someone needs it, and not mid-battle (the battle Bag does that there)
+  $('#party-heal').disabled = !p || !!state.battle || !p.slots.some(m => m.name && (m.fainted || m.hp < m.maxHp || m.status));
   const sig = JSON.stringify([p || null, partyMoveFrom]);
   if (sig === lastPartySig && $('#party').childElementCount) return;
   lastPartySig = sig;
@@ -1169,9 +1249,15 @@ function renderBag() {
     const list = bag.balls || [];
     if (!list.length) { el.innerHTML = `<div class="note">No Poké Balls in your inventory${bag.backpacks ? ' or backpacks' : ''}.</div>`; return; }
     el.innerHTML = (bag.wild ? '' : '<div class="note">Balls can only be thrown at wild Pokémon. You can still put one in your hand.</div>') + list.map(e => `
-      <div class="bi"><div class="row1">${icon(e.k)}<div><div class="nm">${esc(e.name)}</div><div class="ct">${bagCount(e)}</div></div></div>
+      <div class="bi"><div class="row1">${icon(e.k)}<div><div class="nm">${esc(e.name)}</div><div class="ct">${bagCount(e)}</div></div>${catchChip(e)}</div>
         <div class="acts"><button class="throw" data-throw="${esc(e.k)}" ${bag.wild ? '' : 'disabled'}>Throw</button><button data-equip="${esc(e.k)}">Equip</button></div></div>`).join('');
   }
+}
+// Catch chance per throw, from Cobblemon's own capture math run on the server (only against a wild Pokémon).
+function catchChip(e) {
+  if (e.chance == null) return '';
+  const c = e.chance, hue = Math.round(Math.min(c, 100) * 1.2); // red 0% → green 100%
+  return `<div class="chance" style="background:hsl(${hue},80%,58%)" title="Chance one throw catches it"><b>${c}%</b><small>to catch</small></div>`;
 }
 async function bagAct(body, done) {
   if (bagBusy) return;
@@ -1361,7 +1447,7 @@ setInterval(() => { if (!keys.length && state && state.inGame) loadKeys(); }, 30
   const order = () => $$('#tabs [data-tab]').map(b => b.dataset.tab);
   let sx = 0, sy = 0, t0 = 0, ok = false;
   $('main').addEventListener('pointerdown', e => {
-    ok = !e.target.closest('.slot, .pk, .mon, .ni, .mv, button, input, select, #grid, #pc-main, #net-grid, #chat-log, #map-canvas');
+    ok = !e.target.closest('.slot, .pk, .mon, .ni, .mv, button, input, select, #grid, #pc-main, #net-grid, #pack-grid, #chat-log, #map-canvas');
     sx = e.clientX; sy = e.clientY; t0 = Date.now();
   });
   $('main').addEventListener('pointerup', e => {
@@ -1381,6 +1467,9 @@ const MAP_MIN = 0.25, MAP_MAX = 10;
 async function loadMap() {
   try { map = await api('/api/map'); } catch (e) { $('#map-info').textContent = e.message; return; }
   if (mapFollow) { mapView.cx = map.x; mapView.cz = map.z; }
+  // underground (and in the Nether) the map shows the cave layer at your height
+  const layer = map.cave ? `Cave map · y ${map.caveFrom} to ${map.caveTo} · ` : '';
+  $('#map-info').textContent = `${layer}${Math.floor(map.x)}, ${Math.floor(map.z)} · ${(map.tiles || []).length ? 'tap the map for options' : 'walk around to draw the map'}`;
   drawMap();
 }
 function mapToScreen(x, z, c) { return [c.width / 2 + (x - mapView.cx) * mapView.scale, c.height / 2 + (z - mapView.cz) * mapView.scale]; }
@@ -1390,7 +1479,8 @@ function tileImg(t) {
   if (e && e.ver === t[2]) return e.img.complete && e.img.naturalWidth ? e.img : null;
   const img = new Image();
   img.onload = () => drawMap();
-  img.src = `/api/maptile/${encodeURIComponent(map.dim)}/${t[0]}/${t[1]}?v=${t[2]}`;
+  // versions restart with each game launch: the launch id keeps an old cached picture from matching
+  img.src = `/api/maptile/${encodeURIComponent(map.dim)}/${t[0]}/${t[1]}?v=${t[2]}&b=${bootId || 0}`;
   // keep showing the old picture until the new one arrives
   mapImgs.set(k, { ver: t[2], img, old: e && e.img });
   return e && e.img && e.img.complete ? e.img : null;
@@ -1443,8 +1533,6 @@ function drawMap() {
   g.save(); g.translate(px, py); g.rotate(yaw + Math.PI);
   g.beginPath(); g.moveTo(0, -26); g.lineTo(18, 20); g.lineTo(0, 10); g.lineTo(-18, 20); g.closePath();
   g.fillStyle = '#ffffff'; g.fill(); g.lineWidth = 5; g.strokeStyle = '#e0402f'; g.stroke(); g.restore();
-  $('#map-info').textContent = map.mappable ? `${Math.floor(map.x)}, ${Math.floor(map.z)} · ${(map.tiles || []).length ? 'tap the map for options' : 'walk around to draw the map'}` :
-    'This dimension has a roof: the map draws the Overworld and other open dimensions.';
 }
 function mapZoom(f, ax, ay) {
   const c = $('#map-canvas');
@@ -1841,6 +1929,14 @@ const mir = (() => {
 
 // The Android wrapper keeps its window unfocusable so the controller stays with the game;
 // it only takes focus while a text field is being edited.
+// Haptics through the panel app (a light tick per press, a firmer one for long-presses); plain browsers fall back to vibrate.
+function haptic(kind) {
+  try {
+    if (window.CVDSApp && CVDSApp.haptic) CVDSApp.haptic(kind);
+    else if (navigator.vibrate) navigator.vibrate(kind === 'heavy' ? 30 : 8);
+  } catch {}
+}
+document.addEventListener('pointerdown', e => { if (e.target.closest('button, .slot, .mon, .pk-move')) haptic('tick'); }, true);
 document.addEventListener('focusin', e => { if (e.target.matches('input') && window.CVDSApp) CVDSApp.setFocusable(true); });
 document.addEventListener('focusout', e => { if (e.target.matches('input') && window.CVDSApp) CVDSApp.setFocusable(false); });
 const unfocus = () => { if (window.CVDSApp) CVDSApp.setFocusable(false); };

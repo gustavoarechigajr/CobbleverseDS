@@ -39,6 +39,7 @@ const STATES = {
   battle: () => Object.assign(base(), { screen: { kind: 'other' }, battle: true, menu: { id: 0, slots: inventorySlots(9) } }),
 };
 function setState(name) { st = STATES[name](); rev++; }
+let caveMap = false;
 const json = (o) => ({ ok: true, status: 200, json: async () => o, headers: { get: () => 'application/json' } });
 async function fakeFetch(url, opts) {
   const u = new URL(url, 'http://x');
@@ -64,14 +65,22 @@ async function fakeFetch(url, opts) {
     bench: [{ id: 'thundershock', name: 'Thunder Shock', type: 'Electric', cat: 'special', power: 40, acc: 100 }],
     evolutions: [{ i: 0, name: 'Raichu' }], items: {} });
   if (u.pathname === '/api/mirror') return { ok: true, status: 204, headers: { get: () => null }, json: async () => ({}) };
-  if (u.pathname === '/api/map') return json({ ok: true, dim: 'minecraft:overworld', mappable: true, x: 0, z: 0, yaw: 0, tile: 256, tiles: [], xaero: true,
+  if (u.pathname === '/api/pack') {
+    if (opts && opts.method === 'POST') { const b = JSON.parse(opts.body); actions.push(Object.assign({ via: 'pack' }, b)); return json({ ok: true, moved: 5 }); }
+    return json({ ok: true, packs: 1, slots: 54, free: 50, list: [{ k: 'cobblemon:revive', name: 'Revive', n: 12 }, { k: 'minecraft:torch', name: 'Torch', n: 64 }] });
+  }
+  if (u.pathname === '/api/map') return json({ ok: true, dim: caveMap ? 'minecraft:overworld~c1' : 'minecraft:overworld', mappable: true, x: 0, z: 0, yaw: 0, tile: 256, tiles: [], xaero: true,
+    ...(caveMap ? { cave: true, caveFrom: -33, caveTo: 31 } : {}),
     waypoints: [{ i: 0, name: 'Home', initials: 'H', x: 100, y: 64, z: 100 }], mons: [{ name: 'Pidgey', lvl: 4, x: -30, z: 0, wild: true, shiny: false }] });
   if (u.pathname === '/api/bag') {
-    if (opts && opts.method === 'POST') { actions.push(Object.assign({ via: 'bag' }, JSON.parse(opts.body))); return json({ ok: true }); }
+    if (opts && opts.method === 'POST') {
+      const b = JSON.parse(opts.body); actions.push(Object.assign({ via: 'bag' }, b));
+      return json(b.op === 'heal' ? { ok: true, used: ['Potion → Pikachu'], missing: ['Gengar needs a Revive'] } : { ok: true });
+    }
     return json({ ok: true, inBattle: true, wild: true, canAct: true, backpacks: true,
       items: [{ k: 'cobblemon:max_revive', name: 'Max Revive', inv: 64, pack: 0, inGame: false, targets: [{ id: 'p9', name: 'Gengar', hp: 0, maxHp: 104 }] },
               { k: 'cobblemon:ether', name: 'Ether', inv: 1, pack: 0, inGame: true, targets: [] }],
-      balls: [{ k: 'cobblemon:poke_ball', name: 'Poké Ball', inv: 0, pack: 12 }] });
+      balls: [{ k: 'cobblemon:poke_ball', name: 'Poké Ball', inv: 0, pack: 12, chance: 37 }] });
   }
   if (u.pathname === '/api/battle') return json(st.battle && st.waiting ? { active: true, mine: [], theirs: [] } : st.battle ? { active: true, minimised: !!st.minimised, mine: [{ name: 'Pikachu', species: 'Pikachu', lvl: 12, hp: 30, maxHp: 35, flat: true, types: ['Electric'] }], theirs: [{ name: 'Gyarados', species: 'Gyarados', lvl: 20, hp: 1, maxHp: 1, flat: false, types: ['Water', 'Flying'] }], request: { singles: true, gimmicks: ['mega', 'zmove', 'terastal'], teraType: 'Fire', moves: [{ id: 'thunderbolt', name: 'Thunderbolt', zmove: 'Gigavolt Havoc', pp: 15, maxPp: 15, type: 'Electric', cat: 'special', power: 90, acc: 100 }, { id: 'lightscreen', name: 'Light Screen', pp: 30, maxPp: 30, type: 'Psychic', cat: 'status', power: 0, acc: 0 }], bench: [] } } : { active: false });
   return { ok: false, status: 404, json: async () => ({ ok: false, error: 'nope' }) };
@@ -86,7 +95,7 @@ w.console.error = (...a) => errors.push(a.join(' '));
 w.addEventListener('error', e => errors.push(String(e.error && e.error.stack || e.message)));
 setState('none');
 // Test-only handle into the page's script scope (strict-mode declarations aren't globals).
-w.eval(appJs + '\nwindow.__t = { showTab, layoutSlots, mapTap, loadMap, setLastTouch: v => { lastTouch = v; } };');
+w.eval(appJs + '\nwindow.__t = { showTab, layoutSlots, mapTap, loadMap, loadPack, itemMenu, setLastTouch: v => { lastTouch = v; } };');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const $ = s => w.document.querySelector(s);
@@ -256,6 +265,7 @@ const activeTab = () => ($('#tabs button.on') || {}).dataset?.tab;
   $('#b-bag [data-bi="cobblemon:ether"]').click(); await sleep(20);
   check($('#b-bag').textContent.includes('game screen') && !$('#b-bag [data-use]'), 'PP items say to use them in game');
   $('#b-views [data-bv="balls"]').click(); await sleep(100);
+  check(($('#b-bag .chance') || {}).textContent?.includes('37%'), 'each ball shows its chance to catch');
   check($('#b-bag').textContent.includes('backpack'), 'balls from the backpack are marked');
   actions.length = 0; $('#b-bag [data-throw]').click(); await sleep(100);
   check(actions.some(a => a.via === 'bag' && a.op === 'throw' && a.k === 'cobblemon:poke_ball'), 'Throw sends the ball');
@@ -341,6 +351,40 @@ const activeTab = () => ($('#tabs button.on') || {}).dataset?.tab;
     [...$$('#sheet [data-opt]')].find(b => b.textContent.startsWith('Track')).click(); await sleep(50);
     check(JSON.parse(w.localStorage.getItem('cvds.spTracked') || '[]').length === 1, 'tracking a spawn saves it');
   }
+  // Heal party: offered when someone is hurt, lists what it used and what was missing
+  setState('none'); w.__t.showTab('party'); await sleep(200);
+  check(!$('#party-heal').disabled, 'Heal party is offered when a Pokémon is hurt');
+  actions.length = 0; $('#party-heal').click(); await sleep(150);
+  check(actions.some(a => a.via === 'bag' && a.op === 'heal'), 'Heal party asks the server to heal');
+  check($('#sheet').textContent.includes('Potion → Pikachu') && $('#sheet').textContent.includes('needs a Revive'), 'Heal party lists what it used and what is missing');
+  $('#sheet .close').click(); await sleep(20);
+
+  // Backpack view
+  w.__t.showTab('storage'); await w.__t.loadPack(); await sleep(50);
+  check(!$('#pack-btn').classList.contains('hidden'), 'In backpack shows when a backpack is carried');
+  $('#pack-btn').click(); await sleep(200);
+  check(!$('#pack').classList.contains('hidden') && $('#pack-grid').textContent.includes('Revive'), 'the Backpack view lists what the backpacks hold');
+  actions.length = 0;
+  const pni = $('#pack-grid .ni');
+  pni.dispatchEvent(new w.MouseEvent('pointerdown', { bubbles: true, clientX: 5, clientY: 5 }));
+  pni.dispatchEvent(new w.MouseEvent('pointerup', { bubbles: true, clientX: 5, clientY: 5 })); await sleep(150);
+  check(actions.some(a => a.via === 'pack' && a.op === 'take' && a.amount === 'stack'), 'tapping a backpack item takes a stack');
+  const filled = [...$$('#grid .slot')].find(el => el.querySelector('img'));
+  if (filled) {
+    w.__t.itemMenu(Number(filled.dataset.i)); await sleep(20);
+    const put = [...$$('#sheet [data-opt]')].find(b => b.textContent.startsWith('Put all in backpack'));
+    check(!!put, 'an inventory item can be put in the backpack');
+    actions.length = 0; if (put) put.click(); await sleep(150);
+    check(actions.some(a => a.via === 'pack' && a.op === 'store' && a.k === 'minecraft:stone'), 'Put all in backpack sends the item');
+  } else check(false, 'found an inventory item to put in the backpack');
+  $('#pack-close').click(); await sleep(20);
+  check($('#pack').classList.contains('hidden'), 'Close hides the Backpack view');
+
+  // cave map label
+  caveMap = true; w.__t.showTab('map'); await w.__t.loadMap(); await sleep(50);
+  check($('#map-info').textContent.includes('Cave map · y -33 to 31'), 'underground the map says it shows the cave layer');
+  caveMap = false;
+
   check(errors.length === 0, 'no console errors' + (errors.length ? ': ' + errors[0] : ''));
   console.log(failures ? `\n${failures} UI checks failed` : '\nall UI checks passed');
   process.exit(failures ? 1 : 0);
