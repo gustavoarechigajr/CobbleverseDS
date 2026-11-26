@@ -65,10 +65,6 @@ async function fakeFetch(url, opts) {
     bench: [{ id: 'thundershock', name: 'Thunder Shock', type: 'Electric', cat: 'special', power: 40, acc: 100 }],
     evolutions: [{ i: 0, name: 'Raichu' }], items: {} });
   if (u.pathname === '/api/mirror') return { ok: true, status: 204, headers: { get: () => null }, json: async () => ({}) };
-  if (u.pathname === '/api/pack') {
-    if (opts && opts.method === 'POST') { const b = JSON.parse(opts.body); actions.push(Object.assign({ via: 'pack' }, b)); return json({ ok: true, moved: 5 }); }
-    return json({ ok: true, packs: 1, slots: 54, free: 50, list: [{ k: 'cobblemon:revive', name: 'Revive', n: 12 }, { k: 'minecraft:torch', name: 'Torch', n: 64 }] });
-  }
   if (u.pathname === '/api/map') return json({ ok: true, dim: caveMap ? 'minecraft:overworld~c1' : 'minecraft:overworld', mappable: true, x: 0, z: 0, yaw: 0, tile: 256, tiles: [], xaero: true,
     ...(caveMap ? { cave: true, caveFrom: -33, caveTo: 31 } : {}),
     waypoints: [{ i: 0, name: 'Home', initials: 'H', x: 100, y: 64, z: 100 }], mons: [{ name: 'Pidgey', lvl: 4, x: -30, z: 0, wild: true, shiny: false }] });
@@ -95,7 +91,7 @@ w.console.error = (...a) => errors.push(a.join(' '));
 w.addEventListener('error', e => errors.push(String(e.error && e.error.stack || e.message)));
 setState('none');
 // Test-only handle into the page's script scope (strict-mode declarations aren't globals).
-w.eval(appJs + '\nwindow.__t = { showTab, layoutSlots, mapTap, loadMap, loadPack, itemMenu, setLastTouch: v => { lastTouch = v; } };');
+w.eval(appJs + '\nwindow.__t = { showTab, layoutSlots, mapTap, loadMap, setLastTouch: v => { lastTouch = v; } };');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const $ = s => w.document.querySelector(s);
@@ -359,26 +355,6 @@ const activeTab = () => ($('#tabs button.on') || {}).dataset?.tab;
   check($('#sheet').textContent.includes('Potion → Pikachu') && $('#sheet').textContent.includes('needs a Revive'), 'Heal party lists what it used and what is missing');
   $('#sheet .close').click(); await sleep(20);
 
-  // Backpack view
-  w.__t.showTab('storage'); await w.__t.loadPack(); await sleep(50);
-  check(!$('#pack-btn').classList.contains('hidden'), 'In backpack shows when a backpack is carried');
-  $('#pack-btn').click(); await sleep(200);
-  check(!$('#pack').classList.contains('hidden') && $('#pack-grid').textContent.includes('Revive'), 'the Backpack view lists what the backpacks hold');
-  actions.length = 0;
-  const pni = $('#pack-grid .ni');
-  pni.dispatchEvent(new w.MouseEvent('pointerdown', { bubbles: true, clientX: 5, clientY: 5 }));
-  pni.dispatchEvent(new w.MouseEvent('pointerup', { bubbles: true, clientX: 5, clientY: 5 })); await sleep(150);
-  check(actions.some(a => a.via === 'pack' && a.op === 'take' && a.amount === 'stack'), 'tapping a backpack item takes a stack');
-  const filled = [...$$('#grid .slot')].find(el => el.querySelector('img'));
-  if (filled) {
-    w.__t.itemMenu(Number(filled.dataset.i)); await sleep(20);
-    const put = [...$$('#sheet [data-opt]')].find(b => b.textContent.startsWith('Put all in backpack'));
-    check(!!put, 'an inventory item can be put in the backpack');
-    actions.length = 0; if (put) put.click(); await sleep(150);
-    check(actions.some(a => a.via === 'pack' && a.op === 'store' && a.k === 'minecraft:stone'), 'Put all in backpack sends the item');
-  } else check(false, 'found an inventory item to put in the backpack');
-  $('#pack-close').click(); await sleep(20);
-  check($('#pack').classList.contains('hidden'), 'Close hides the Backpack view');
 
   // cave map label
   caveMap = true; w.__t.showTab('map'); await w.__t.loadMap(); await sleep(50);

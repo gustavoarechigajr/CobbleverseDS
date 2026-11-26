@@ -254,8 +254,6 @@ function itemMenu(i) {
     { label: 'To hotbar…', sub: 'pick a slot 1–9', run: () => sheet('Put ' + name + ' in hotbar slot', null,
         [1, 2, 3, 4, 5, 6, 7, 8, 9].map(n => ({ label: String(n), run: () => { setSelected(null); act({ kind: 'inv', op: 'hotbar', slot: i, hotbar: n - 1, menu }); } }))) },
     { label: 'Move all like this', sub: 'every ' + name, run: () => { setSelected(null); act({ kind: 'inv', op: 'quickAll', group: s.g === 'c' ? 'c' : 'pc', key: s.k, menu }); } },
-    ...(packCount && s.g !== 'c' && !s.k.startsWith('sophisticatedbackpacks:') ? [{ label: 'Put all in backpack', sub: 'every ' + name + ' in your inventory',
-      run: () => { setSelected(null); packAct({ op: 'store', k: s.k }, n => `Put ${n} ${name} in your backpack`); } }] : []),
     { label: 'Drop one', run: () => { setSelected(null); act({ kind: 'inv', op: 'drop', slot: i, all: false, menu }); } },
     { label: 'Drop stack', run: () => { setSelected(null); act({ kind: 'inv', op: 'drop', slot: i, all: true, menu }); } },
   ]);
@@ -483,62 +481,6 @@ function renderNet() {
 })();
 $('#net-search').addEventListener('input', renderNet);
 
-// ---------- Backpack view (Sophisticated Backpacks the player carries) ----------
-let pack = null, packOpen = false, packCount = 0, packBusy = false;
-async function loadPack() {
-  try { pack = await api('/api/pack'); packCount = pack.packs || 0; }
-  catch { pack = null; packCount = 0; }
-  $('#pack-btn').classList.toggle('hidden', !packCount);
-  if (!packCount) packOpen = false;
-  renderShortcuts();
-  renderPack();
-}
-function renderPack() {
-  const box = $('#pack');
-  box.classList.toggle('hidden', !packOpen || !pack);
-  $('#pack-btn').classList.toggle('on', packOpen);
-  if (!packOpen || !pack) return;
-  const q = $('#pack-search').value.trim().toLowerCase();
-  const list = (pack.list || []).filter(e => !q || e.name.toLowerCase().includes(q) || e.k.includes(q)).sort((a, b) => b.n - a.n);
-  $('#pack-info').textContent = `${pack.packs} backpack${pack.packs === 1 ? '' : 's'} · ${pack.free}/${pack.slots} slots free`;
-  const html = list.map(e => `<div class="ni" data-pk="${esc(e.k)}" title="${esc(e.name)}"><img src="${iconUrl(e.k)}" alt="" onerror="this.remove()" onload="this.nextElementSibling.style.display='none'"><div class="txt">${esc(e.name)}</div><span class="n">${fmtCount(e.n)}</span></div>`).join('');
-  setHtml('#pack-grid', html || `<div class="note">${(pack.list || []).length ? 'Nothing matches.' : 'Your backpacks are empty.'}</div>`);
-}
-async function packAct(body, done) {
-  if (packBusy) return;
-  packBusy = true;
-  try { const r = await api('/api/pack', body); toast(done(r.moved || 0), true); }
-  catch (e) { toast(e.message); }
-  finally { packBusy = false; }
-  loadPack();
-}
-const packName = k => ((pack && pack.list || []).find(e => e.k === k) || {}).name || 'item';
-$('#pack-game').addEventListener('click', () => { packOpen = false; renderPack(); });
-const packTake = (k, amount) => packAct({ op: 'take', k, amount }, n => `Took ${n} ${packName(k)}`);
-$('#pack-btn').addEventListener('click', () => { packOpen = !packOpen; renderPack(); if (packOpen) loadPack(); });
-$('#pack-close').addEventListener('click', () => { packOpen = false; renderPack(); });
-$('#pack-search').addEventListener('input', renderPack);
-(() => {
-  const g = $('#pack-grid');
-  let timer = null, k = null, long = false, sx = 0, sy = 0;
-  g.addEventListener('pointerdown', e => {
-    const el = e.target.closest('.ni');
-    if (!el) return;
-    k = el.dataset.pk; long = false; sx = e.clientX; sy = e.clientY;
-    timer = setTimeout(() => { long = true; haptic('heavy'); sheet(packName(k), null, [
-      { label: 'Take a stack', run: () => packTake(k, 'stack') },
-      { label: 'Take one', run: () => packTake(k, 'one') },
-      { label: 'Take all', sub: 'as much as fits', run: () => packTake(k, 'all') },
-    ]); }, 450);
-  });
-  const cancel = () => { clearTimeout(timer); timer = null; };
-  g.addEventListener('pointermove', e => { if (Math.hypot(e.clientX - sx, e.clientY - sy) > 20) cancel(); });
-  g.addEventListener('pointercancel', cancel);
-  g.addEventListener('pointerup', () => { const was = timer != null; cancel(); if (!long && was && k) packTake(k, 'stack'); });
-})();
-// Open: refresh every 2.5 s. Closed: check every 15 s whether a backpack is carried (shows the button).
-let packTick = 0;
-setInterval(() => { if (tab === 'storage' && state && state.inGame && (packOpen || packTick++ % 6 === 0)) loadPack(); }, 2500);
 $('#net-sort').addEventListener('change', renderNet);
 setInterval(() => { if (tab === 'storage' && netActive()) loadNet(); else if (!netActive()) { $('#net').classList.add('hidden'); netSig = ''; } }, 700);
 
@@ -642,8 +584,6 @@ function renderShortcuts() {
       `<button class="sc" data-kb="${esc(id)}" title="${esc((keys.find(k => k.id === id) || {}).bound || '')}"><img src="${iconUrl(icon)}" alt="" onerror="this.remove()">${esc(label)}</button>`).join('');
     if (el.dataset.html !== html) { el.innerHTML = html; el.dataset.html = html; }
   });
-  // the Backpack view replaces the open-backpack key in the Storage bar (it has "Open in game" inside)
-  $$('.shortcuts[data-sc="storage"] [data-kb="keybind.sophisticatedbackpacks.open_backpack"]').forEach(b => b.classList.toggle('hidden', packCount > 0));
   // in battle the Battle-an-angry-Pokémon key makes no sense; outside one, the battle log doesn't either
   const inBattle = !!(battle && battle.active);
   $$('.shortcuts[data-sc="battle"] [data-kb]').forEach(b => b.classList.toggle('hidden', (b.dataset.kb === 'key.fightorflight.startbattle') === inBattle));
@@ -1447,7 +1387,7 @@ setInterval(() => { if (!keys.length && state && state.inGame) loadKeys(); }, 30
   const order = () => $$('#tabs [data-tab]').map(b => b.dataset.tab);
   let sx = 0, sy = 0, t0 = 0, ok = false;
   $('main').addEventListener('pointerdown', e => {
-    ok = !e.target.closest('.slot, .pk, .mon, .ni, .mv, button, input, select, #grid, #pc-main, #net-grid, #pack-grid, #chat-log, #map-canvas');
+    ok = !e.target.closest('.slot, .pk, .mon, .ni, .mv, button, input, select, #grid, #pc-main, #net-grid, #chat-log, #map-canvas');
     sx = e.clientX; sy = e.clientY; t0 = Date.now();
   });
   $('main').addEventListener('pointerup', e => {

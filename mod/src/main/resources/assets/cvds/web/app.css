@@ -168,7 +168,7 @@ h3 small { font: 700 20px var(--round); color: var(--dim); }
 
 /* storage network (Tom's) */
 #net { flex: 0 1 auto; max-height: 46%; display: flex; flex-direction: column; gap: 10px; min-height: 0; }
-#pack-grid, #net-grid { flex: 0 1 auto; min-height: 100px; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, 100px); grid-auto-rows: 100px; gap: 6px; align-content: start; }
+#net-grid { flex: 0 1 auto; min-height: 100px; overflow-y: auto; display: grid; grid-template-columns: repeat(auto-fill, 100px); grid-auto-rows: 100px; gap: 6px; align-content: start; }
 .ni { position: relative; background: #43474e; border-radius: 8px; overflow: hidden; box-shadow: inset 3px 3px 0 var(--slot-lo), inset -3px -3px 0 var(--slot-hi); }
 .ni img { position: absolute; inset: 9%; width: 82%; height: 82%; image-rendering: pixelated; pointer-events: none; }
 .ni .txt { position: absolute; inset: 6px; font: 800 16px/1.05 var(--round); color: var(--dim); overflow: hidden; pointer-events: none; }
@@ -475,9 +475,4 @@ details .keys { padding: 4px 0 14px; }
 .slot.drop, .pk.drop { box-shadow: inset 0 0 0 5px var(--blue-hi), 0 0 0 2px var(--ink); z-index: 2; }
 #pc-main { touch-action: none; } /* the finger drags Pokémon, it doesn't scroll the page */
 
-/* Backpack view */
-#pack { flex: 0 1 auto; max-height: 52%; display: flex; flex-direction: column; gap: 8px; min-height: 0; }
-#pack.hidden { display: none; }
-#pack-info { flex: 1; }
-#pack-btn.on { background: linear-gradient(180deg, var(--yellow-hi), var(--yellow)); }
 #inv-search { min-width: 220px; }

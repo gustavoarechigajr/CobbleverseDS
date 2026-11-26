@@ -22,10 +22,7 @@ final class Backpacks {
 
 	interface Visitor { void visit(Slot s); }
 
-	static void forEachSlot(Player player, Visitor v) { forEachSlot(player, v, false); }
-
-	/** Every slot of every carried backpack; empty ones too if {@code withEmpty} (for storing into them). */
-	static void forEachSlot(Player player, Visitor v, boolean withEmpty) {
+	static void forEachSlot(Player player, Visitor v) {
 		if (!LOADED) return;
 		try {
 			Class<?> pip = Class.forName("net.p3pp3rf1y.sophisticatedbackpacks.util.PlayerInventoryProvider");
@@ -48,8 +45,7 @@ final class Backpacks {
 					int n = slotCount(handler);
 					for (int i = 0; i < n; i++) {
 						ItemStack s = (ItemStack) get.invoke(handler, i);
-						if (s == null) s = ItemStack.EMPTY;
-						if (withEmpty || !s.isEmpty()) v.visit(new Slot(handler, i, s));
+						if (s != null && !s.isEmpty()) v.visit(new Slot(handler, i, s));
 					}
 				} catch (Throwable t) {
 					if (!warned) { warned = true; CvdsClient.LOG.warn("cvds: could not read a backpack", t); }

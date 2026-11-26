@@ -98,13 +98,6 @@ public final class Api implements dev.cvds.net.MiniHttpServer.Handler {
 					return Response.json(BattleBag.act(mc, JsonParser.parseString(req.bodyText()).getAsJsonObject()).toString());
 				return Response.json(BattleBag.list(mc).toString());
 			}
-			case "/api/pack": {
-				// Backpack view: like the bag, it works on the integrated server and waits here.
-				if (mc.player == null) return Response.json(error("not in game").toString());
-				if (req.method().equals("POST"))
-					return Response.json(BackpackView.act(mc, JsonParser.parseString(req.bodyText()).getAsJsonObject()).toString());
-				return Response.json(BackpackView.list(mc).toString());
-			}
 			case "/api/map": return onClient(mc, () -> MapApi.info(mc));
 			case "/api/pokemon": {
 				if (!Snapshot.COBBLEMON) return Response.json(error("cobblemon not installed").toString());

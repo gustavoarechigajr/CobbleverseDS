@@ -43,8 +43,13 @@ in the pack, matched by checksum).
 - `adb push mod/build/libs/cobbleverse-ds-0.1.0.jar <instance>/mods/` and `adb install -r android/build/cobbleverse-ds.apk`.
 - Wireless ADB: the serial and port change whenever wireless debugging restarts (`adb mdns services`).
   Android turns wireless debugging off after a while asleep; it has to be re-enabled on the device.
-- Open the panel: launch "Cobbleverse DS" from the bottom-screen launcher, or
-  `adb shell am start --display 4 -n dev.cvds.app/.MainActivity --ez dev.cvds.app.PLACED true`.
+- Open the panel: the "Cobbleverse DS" icon (`LaunchActivity`, an invisible trampoline that starts the panel on the
+  presentation display), or `adb shell am start -n dev.cvds.app/.LaunchActivity`.
+- **Before tapping the bottom screen over ADB, screenshot it.** A game restart can leave the panel closed, and blind
+  taps then hit the home screen (once opened Spotify over the game).
+- A new debug key (different PC) means `adb uninstall dev.cvds.app` first; that wipes the panel's localStorage.
+- `android/build.sh` picks the newest build-tools and platform under `$ANDROID_SDK`, `~/android-dev/sdk` or
+  `~/Android/Sdk`, and uses `$JAVA_HOME` or the `java` on PATH.
 
 ### Running the integration tests on the Thor
 1. Debug on: push `config/cvds.json` with `{"port": 25599, "debug": true}` **and `chmod 666` it** (a file pushed
@@ -95,17 +100,36 @@ soon as a run is done. Don't loop `KEYCODE_WAKEUP`.
 - **Starting a wild battle without debug**: `/spawnpokemonat X Y Z magikarp level=2` in front, swipe the view onto it,
   then press `key.cobblemon.throwpartypokemon` with a Pokémon out.
 - `/save-all` doesn't exist in singleplayer: don't force-stop the game expecting a save (autosave is every 5 min).
+  Pause with `input -d 0 keyevent 111`, then tap Save and Quit through the mirror (`pointer tap u 0.5 v 0.673`).
+- **Android blocks activity starts from `onCreate`** of an activity not yet on screen (background-launch rules):
+  the panel's old "relaunch myself on display 4" silently did nothing. Hence the `LaunchActivity` trampoline.
+- **Mirror clicks wait one drawn frame after the move**: Xaero's map only reads the mouse position while rendering,
+  so a same-frame click acted on the previous spot (`Pointer` queue + `GameRendererMixin`).
+- **A sheet opened on finger-lift gets the browser's own click for that touch**, which closed it at once.
+  `sheet()` ignores trusted clicks for 350 ms. jsdom tests can't see this; tap with CDP `Input.dispatchTouchEvent`.
+- **Map tile URLs carry the launch id** (`&b=`): tile versions restart each launch, and the WebView otherwise reused a
+  cached picture from a previous launch with the same `?v=`.
+- **Panel reloads on a new game launch** (`boot` in `/api/state`), so pushed panel files take effect without reopening.
+- **Haptics:** the app's `CVDSApp.haptic()` works, but the Thor plays touch vibrations at 0 strength (system setting).
+- **Catch chance** runs Cobblemon's configured capture calculator 1200 times on a ball entity that is never added to
+  the world, cached per ball/target/HP/status. Test battles: `pokespawn` 3 blocks ahead at pitch 20, then send out.
+- **Panel tap on the status bar's right side cycles the idle-dark delay**; wake the panel by tapping the middle.
 
-## Status (2026-11-23)
+## Status (2026-11-26)
 Done and tested on the Thor: storage panel (any container, tap-tap moves, sort, bulk), crafting (2×2, table, Tom's
 crafting terminal from the network), keybind board, party (icons, reorder, send out), Cobblemon PC (boxes,
 move/swap/release/sort, search, IVs), Tom's storage terminal, battle helper (singles), spawn finder (singleplayer),
-chat, status bar with FPS, OLED care (idle blackout, pixel shift), Pokédex-style design.
+chat, status bar with FPS, OLED care (idle blackout, pixel shift), Pokédex-style design. Since then: battle Bag
+(inventory + backpacks) with catch chances, ball throw/equip and gimmicks; Pokémon page (Summary as big buttons);
+menu mirror for every other screen; Map tab with waypoints, saved tiles and cave layers; Heal party; panel app 0.2
+(placement trampoline, pause when hidden, auto-reload). A panel-side backpack browser was tried and removed: the
+owner prefers the Backpack key opening the real backpack screen.
 
 Open items / ideas:
 - Verify with real buttons that the controller still reaches the game after opening the panel (the Thor's
   `screen_focus_lock=1` should handle it; injected keys can't test it).
 - Double-battle targeting; pasture and CobbleDollars shop screens; drag-to-spread in storage.
+- Map: import areas Xaero's World Map already explored; mirror letterboxing (black bars above/below the picture).
 - Zalith's on-screen touch buttons are static on the top screen (burn-in): suggest hiding them in Zalith.
 
 ## The Thor setup itself (for reference)
