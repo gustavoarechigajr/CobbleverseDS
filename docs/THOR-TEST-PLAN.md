@@ -199,3 +199,23 @@ after 3 s), ▶/■, ⏭. The queue and repeat mode are saved in `config/cvds-ju
 For each section: pass or fail, screenshots of anything wrong (`tools/thor.sh` for both screens), and the exact
 error text. Commit any test fixes to this branch. For §1, write down which Zalith settings were needed, if any,
 so the owner can set them up before the flight.
+
+---
+
+## Results on the Thor (2026-11-27)
+Branch build `93d1869` as `cobbleverse-ds-0.2.0.jar`, panel app 0.2.0 unchanged. Run in a fresh throwaway world
+`cvds-it` (the suite runs `clear @a`; the owner plays in `cvds-test`), debug on for the run, off afterwards.
+
+| # | Result |
+|---|---|
+| 1 | **Not run.** ADB is wireless: airplane mode or Wi-Fi off cuts the connection. Owner to try by hand (steps in §1). |
+| 2 | **Pass.** Panel open before launch: 11 icon requests answered 503 while loading, all 11 drawn as soon as the title screen appeared (0 failed, 0 blank). All 10 tab icons and in-world icons show. |
+| 3 | **Pass.** Lv 40 Pikachu: Change lists 16 moves (Charm … Thunder Wave), in one big-button sheet (the sheet scrolls if longer). Integration swap test passes. Not compared side by side with the in-game Summary swap list. |
+| 4 | **Pass.** Wild Snorlax battle: Bag and Poké Balls views pixel-identical across 5 screenshots over 10 s (catch chips 12% / 13%). |
+| 5 | **Pass.** Opening a table switches to Craft; triple-tap Craft 1 with 4 planks made exactly one crafting table; all cards kept their places, greyed with "0/4"; closing went back to Storage. |
+| 6 | **Pass** (UI and state). Queue 2 songs, play (progress counts), skip, stop, clear queue. Not judged by ear: sound quality and whether Cobblemon battle music plays on top (6.6). |
+
+Integration suite: **31 passed, 0 failed** (all four new tests included, Cobblemon and Tom's tests ran for real).
+
+Seen in passing: when the game was launched from Zalith with the panel already open, the bottom screen's home
+launcher came to the front over the panel; the app icon brought it back. Not new to this branch.
