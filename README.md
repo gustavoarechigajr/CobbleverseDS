@@ -49,6 +49,9 @@ You need two files from the [latest release](https://github.com/gustavoarechigaj
 Zalith Launcher 2, on a dual-screen device like the AYN Thor. Fabric API comes with the pack. Battle bag
 and backpack features use Sophisticated Backpacks; waypoints use Xaero's Minimap. Both are optional.
 
+The app's version number only changes when the app does, so it can be older than the mod's (0.3.0 ships with
+app 0.2.0). If you already have that app version installed, you only need the new jar.
+
 ### 1. Add the mod to Cobbleverse
 1. Download `cobbleverse-ds-<version>.jar` on the device.
 2. Open the instance's mods folder. In Zalith Launcher 2: tap the folder icon (top right), open
@@ -72,6 +75,17 @@ and backpack features use Sophisticated Backpacks; waypoints use Xaero's Minimap
 
 To check it's working: the three lights in the panel's top-left turn **green** in a world, **yellow** on the
 title screen, and **red** if the game isn't running or the mod isn't installed.
+
+### Playing offline (e.g. on a plane)
+The game and the panel work with no network. In Zalith Launcher 2, open the Cobbleverse version's settings and
+turn on **skip game integrity check** before you go offline; otherwise Zalith tries to check the game files online
+before launching. You keep the same player (inventory, party) offline.
+
+If Zalith says *"Failed to save version configuration … EACCES (Permission denied)"*, the instance's files were
+copied in with ADB and Zalith can't write them. Fix it from a computer:
+```bash
+adb shell "find /sdcard/Android/data/com.movtery.zalithlauncher.v2/files/.minecraft -user 2000 -type f ! -perm -g+w -exec chmod 664 {} \;"
+```
 
 ### Building it yourself
 `cd mod && ./gradlew build` (JDK 21) makes the jar in `mod/build/libs/`. `android/build.sh` makes the APK in

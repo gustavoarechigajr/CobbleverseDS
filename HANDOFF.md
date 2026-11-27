@@ -74,6 +74,8 @@ soon as a run is done. Don't loop `KEYCODE_WAKEUP`.
 2. `cd mod && ./gradlew build`, `node tests/ui_test.js`, `bash android/build.sh`.
 3. Tag `v<version>`, push, and `gh release create v<version>` with the jar and the APK (renamed
    `cobbleverse-ds-<version>.apk`) attached. The APK is signed with the building PC's debug key.
+   If `android/` hasn't changed since the last release (`git diff --stat v<last> -- android`), leave the app's
+   version alone and attach the APK under its unchanged version name.
 
 ## Gotchas (each cost real debugging time)
 - **Files copied in over ADB are read-only to Zalith** unless made group-writable: they belong to the shell user, and
@@ -146,14 +148,17 @@ soon as a run is done. Don't loop `KEYCODE_WAKEUP`.
   stops after a few tries with an error. `MusicManagerMixin` holds background music while it plays. Queue saved in
   `config/cvds-jukebox.json`. The desktop dev client has sound only with `ALSOFT_DRIVERS=null` on a box without audio.
 
-## Status (2026-11-26)
+## Status (2026-11-27, release 0.3.0)
 Done and tested on the Thor: storage panel (any container, tap-tap moves, sort, bulk), crafting (2×2, table, Tom's
 crafting terminal from the network), keybind board, party (icons, reorder, send out), Cobblemon PC (boxes,
 move/swap/release/sort, search, IVs), Tom's storage terminal, battle helper (singles), spawn finder (singleplayer),
 chat, status bar with FPS, OLED care (idle blackout, pixel shift), Pokédex-style design. Since then: battle Bag
 (inventory + backpacks) with catch chances, ball throw/equip and gimmicks; Pokémon page (Summary as big buttons);
 menu mirror for every other screen; Map tab with waypoints, saved tiles and cave layers; Heal party; panel app 0.2
-(placement trampoline, pause when hidden, auto-reload). A panel-side backpack browser was tried and removed: the
+(placement trampoline, pause when hidden, auto-reload). 0.3.0: icons survive network drops and slow starts,
+relearnable moves on the Pokémon page, steady battle Bag and crafting cards, Music tab (discs plus the pack's
+background and battle music), dim-then-black idle shade; offline play tested end to end on the Thor (Wi-Fi off over
+USB ADB). A panel-side backpack browser was tried and removed: the
 owner prefers the Backpack key opening the real backpack screen.
 
 Open items / ideas:
