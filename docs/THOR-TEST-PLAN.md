@@ -234,5 +234,22 @@ launcher came to the front over the panel; the app icon brought it back. Not new
   instance was copied over ADB when it was moved from Pojav, so 6 files belonged to the shell user (uid 2000) with
   mode 644, readable but not writable by Zalith (uid 10196, group ext_data_rw): `ZalithLauncher/version.config`,
   `ZalithLauncher/VersionIcon.png`, `Cobbleverse.json`, `servers.dat`, `servers.dat_old` and
-  `mods/controlify-2.5.2+1.21.1-fabric.jar`. Fixed with `chmod 664` on them; none are left. Identity check (§1.7)
-  not done.
+  `mods/controlify-2.5.2+1.21.1-fabric.jar`. Fixed with `chmod 664` on them; none are left.
+- **§1.7 player identity offline: pass.** The owner's offline launch (09:05) logged in as PocketPotato1 with the
+  usual UUID `cb911017-…`, opened New World, and New World still has exactly one player file and one party file,
+  both under that UUID: no new player. (Read from `logs/latest.log`, `usercache.json` and the save's file list;
+  the world was not opened.)
+
+### Network-off run over USB ADB (2026-11-27)
+Thor on USB, so ADB stayed connected with Wi-Fi off. Build `c37868a`, debug on, world `cvds-it`.
+- **Icons with Wi-Fi off (the reported bug): pass.** Turned Wi-Fi off (`svc wifi disable`, no internet) and at the
+  same moment gave 8 items and 5 Pokémon the panel had never drawn. Storage drew all 8 new items, Party all 6
+  sprites, PC all 9 (box + party row), Craft the new recipes (Eye of Ender appeared after crafting Blaze Powder),
+  Battle the new Mewtwo sprite. Nothing blank.
+- **Rest of the panel offline: pass.** Map tiles and markers; Music lists pack music and played Aquacorde Town,
+  then stopped; Craft 1 Blaze Powder made exactly one; wild battle: catch chances (Great 2%, Ultra 3%, Master
+  100%), Thunderbolt went through (Mewtwo to 23%).
+- **Integration suite offline: 31 passed, 0 failed.** (A first run had 1 failure, `pc_boxes_moves_release_sort`
+  timing out on the PC screen, because the manual Mewtwo battle was still running when the suite started; the
+  test passes alone and the full rerun passed.)
+- **Reconnect: pass.** Wi-Fi back on (internet within ~2 s) while giving 6 more new items: all drew.
