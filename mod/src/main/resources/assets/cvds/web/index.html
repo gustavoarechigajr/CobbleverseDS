@@ -134,7 +134,7 @@
       </div>
     </section>
     <section id="tab-music" class="tab">
-      <!-- Jukebox: the game's music discs as a queue, played to you like background music -->
+      <!-- Jukebox: the game's music discs and the pack's background and battle music as a queue, played to you like background music -->
       <div id="jb-now">
         <div id="jb-art"></div>
         <div id="jb-info"><div id="jb-title">Nothing playing</div><div id="jb-time" class="note"></div><div class="hp jb-bar"><i id="jb-prog"></i></div></div>
@@ -143,7 +143,7 @@
       <div id="jb-error" class="note hidden"></div>
       <div id="jb-cols">
         <div class="jb-col">
-          <div class="bar"><h3>Songs</h3><div class="seg" id="jb-filter"><button data-jbf="all" class="on">All</button><button data-jbf="have">Discs I have</button></div></div>
+          <div class="bar"><div class="seg" id="jb-filter"><button data-jbf="all" class="on">All</button><button data-jbf="disc">Discs</button><button data-jbf="music" title="The pack's background music">Music</button><button data-jbf="battle" title="The pack's battle music">Battle</button><button data-jbf="have" title="Music discs in your inventory">Mine</button></div></div>
           <div id="jb-songs" class="jb-list"></div>
           <div class="bar"><button id="jb-addall">Queue all shown</button></div>
         </div>
@@ -176,7 +176,7 @@
     <section id="pkpage" class="hidden" aria-label="Pokémon">
       <div class="pk-head">
         <button id="pk-prev" class="nav">◀</button>
-        <img id="pk-spr" alt="" onerror="iconErr(this, 'hide')">
+        <img id="pk-spr" alt="" onerror="iconErr(this)">
         <div class="pk-id"><div id="pk-name"></div><div id="pk-sub"></div><div id="pk-hp"></div></div>
         <button id="pk-next" class="nav">▶</button>
         <div class="pk-acts"><button id="pk-close">Close</button><button id="pk-game" class="hidden">Game view</button></div>

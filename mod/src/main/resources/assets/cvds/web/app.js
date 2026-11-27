@@ -39,12 +39,13 @@ async function act(body) {
   }
 }
 
-let bootId = null;
+let bootId = null, pollFailed = false;
 async function pollLoop() {
   for (;;) {
     try {
       const r = await fetch(`/api/state?rev=${rev}&wait=1500`);
       const s = await r.json();
+      if (pollFailed) { pollFailed = false; retryFailedIcons(); } // reconnected: fetch what failed meanwhile
       // a new game launch (maybe a new mod build): reload so the page matches the mod
       if (s.boot) { if (bootId && s.boot !== bootId) { location.reload(); return; } bootId = s.boot; }
       if (s.rev !== rev) {
@@ -53,6 +54,7 @@ async function pollLoop() {
         try { render(); } catch (e) { console.error(e); toast('UI error: ' + e.message); }
       }
     } catch (e) {
+      pollFailed = true;
       setStatus('Waiting for the game…', '', 'down');
       await sleep(1000);
     }
@@ -147,18 +149,36 @@ function isCraftTable() {
 function itemInfo(k) { return (state.items && state.items[k]) || { name: k, max: 64 }; }
 function iconUrl(k) { return '/api/icon/' + encodeURIComponent(k); }
 // An icon request can fail while the game is still starting (the panel connects before the game can draw
-// items; the mod answers 503 then) or for one odd item (404). Retry for a few minutes before giving up, so a
-// panel opened during startup, or a game relaunched under an open panel, still gets its icons.
-const ICON_RETRY_MS = [1500, 3000, 5000, 8000, 12000, 20000, 30000, 30000, 30000, 30000, 30000, 30000, 30000];
-function iconErr(img, mode) {
+// items; the mod answers 503 then), for one odd item (404), or because the connection dropped: turning the
+// device's network off makes the WebView abort every request in flight, even local ones. A failed icon stays
+// hidden (its text fallback shows) and is asked for again, sooner at first and then every 30 s for as long as
+// it's on screen. When the connection to the game comes back, every failed icon is asked for at once.
+const ICON_RETRY_MS = [1500, 3000, 5000, 8000, 12000, 20000];
+function iconRetry(img, n) {
+  const base = img.dataset.src0;
+  if (base && img.isConnected) img.src = base + (base.includes('?') ? '&' : '?') + 'r=' + n;
+}
+function iconErr(img) {
   const n = Number(img.dataset.tries || 0);
   const base = img.dataset.src0 || (img.dataset.src0 = (img.getAttribute('src') || '').replace(/[?&]r=\d+$/, ''));
-  if (!base || n >= ICON_RETRY_MS.length) { if (mode === 'hide') img.style.visibility = 'hidden'; else img.remove(); return; }
+  if (!base) return;
   img.dataset.tries = n + 1;
+  img.classList.add('icon-failed');
   img.style.visibility = 'hidden'; // no broken-image box meanwhile; any text fallback stays visible
-  if (!img.dataset.retryHooked) { img.dataset.retryHooked = '1'; img.addEventListener('load', () => { img.style.visibility = ''; }); }
-  setTimeout(() => { if (img.isConnected && img.dataset.src0 === base) img.src = base + (base.includes('?') ? '&' : '?') + 'r=' + (n + 1); }, ICON_RETRY_MS[n]);
+  if (!img.dataset.retryHooked) {
+    img.dataset.retryHooked = '1';
+    img.addEventListener('load', () => { img.style.visibility = ''; img.classList.remove('icon-failed'); img.dataset.tries = 0; });
+  }
+  clearTimeout(img._iconTimer);
+  img._iconTimer = setTimeout(() => iconRetry(img, n + 1), ICON_RETRY_MS[Math.min(n, ICON_RETRY_MS.length - 1)] || 30000);
+  if (n >= ICON_RETRY_MS.length) { clearTimeout(img._iconTimer); img._iconTimer = setTimeout(() => iconRetry(img, n + 1), 30000); }
 }
+/** The connection is back (or the network changed): ask again for every icon that failed. */
+function retryFailedIcons() {
+  $$('img.icon-failed').forEach((img, i) => { clearTimeout(img._iconTimer); img._iconTimer = setTimeout(() => iconRetry(img, Date.now() % 100000), i * 15); });
+}
+window.addEventListener('online', retryFailedIcons);
+window.addEventListener('offline', () => setTimeout(retryFailedIcons, 1500));
 function menuSlots() { return (state.menu && state.menu.slots) || []; }
 function slotByIndex(i) { return menuSlots().find(s => s.i === i); }
 
@@ -555,7 +575,7 @@ async function loadRecipes() {
     const fav = craftFavs.includes(r.id);
     return `
     <div class="card ${r.can ? '' : 'no'}" data-id="${esc(r.id)}">
-      <div class="top"><img src="${iconUrl(r.k)}" alt="" onerror="iconErr(this, 'hide')">
+      <div class="top"><img src="${iconUrl(r.k)}" alt="" onerror="iconErr(this)">
         <div class="meta"><div class="name">${esc(r.name)}${r.n > 1 ? ' ×' + r.n : ''}</div>
         <div class="ings">${(r.ingr || []).map(ingChip).join('') || `<span class="sub">${esc((r.ings || []).join(', '))}</span>`}</div></div>
         <button class="fav${fav ? ' on' : ''}" data-fav="${esc(r.id)}" title="Favourite">${fav ? '★' : '☆'}</button></div>
@@ -583,7 +603,7 @@ $('#recipes').addEventListener('click', async e => {
   setTimeout(loadRecipes, 300);
 });
 
-// ---------- jukebox (Music tab): the game's music discs as a queue ----------
+// ---------- jukebox (Music tab): music discs plus the pack's background and battle music, as a queue ----------
 let jb = null, jbFilter = store.get('jbFilter', 'all'), jbBusy = false;
 const fmtTime = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
 async function loadJukebox() {
@@ -601,15 +621,27 @@ async function jbAct(body, done) {
   finally { jbBusy = false; }
   renderJukebox();
 }
+function jbShown(songs) {
+  if (jbFilter === 'have') return songs.filter(s => s.have);
+  if (jbFilter === 'disc' || jbFilter === 'music' || jbFilter === 'battle') return songs.filter(s => (s.kind || 'disc') === jbFilter);
+  return songs;
+}
 function jbSong(id) { return ((jb && jb.songs) || []).find(s => s.id === id) || { id, name: id, len: 0 }; }
 function renderJukebox() {
   if (!jb) return;
   const songs = jb.songs || [], queue = jb.queue || [], now = jb.now;
   const disc = s => s.k ? `<img src="${iconUrl(s.k)}" alt="" onerror="iconErr(this)">` : '';
   $$('#jb-filter [data-jbf]').forEach(b => b.classList.toggle('on', b.dataset.jbf === jbFilter));
-  const shown = songs.filter(s => jbFilter !== 'have' || s.have);
-  setHtml('#jb-songs', shown.map(s => `<div class="jb-row" data-jbadd="${esc(s.id)}">${disc(s)}<span class="nm">${esc(s.name)}</span><span class="ln">${s.len ? fmtTime(s.len) : ''}</span><button data-jbnow="${esc(s.id)}" aria-label="Play now">▶</button></div>`).join('') ||
-    `<div class="note">${!songs.length && jb.error ? esc(jb.error) : jbFilter === 'have' ? 'No music discs in your inventory. Show "All" to play any song.' : 'This pack has no music discs.'}</div>`);
+  const shown = jbShown(songs);
+  // pack music has no disc: a note glyph instead, and its artist or source pack under the name
+  const art = s => s.k ? disc(s) : `<span class="jb-glyph">${s.kind === 'battle' ? '⚔' : '♫'}</span>`;
+  const sub = s => s.artist || (s.src && s.src !== 'Minecraft' ? s.src : '');
+  const empty = !songs.length && jb.error ? esc(jb.error)
+    : jbFilter === 'have' ? 'No music discs in your inventory. "All" plays any song.'
+    : (jbFilter === 'music' || jbFilter === 'battle') && !jb.musicReady ? 'Listing the pack\'s music…'
+    : 'Nothing here in this pack.';
+  setHtml('#jb-songs', shown.map(s => `<div class="jb-row" data-jbadd="${esc(s.id)}">${art(s)}<span class="nm">${esc(s.name)}${sub(s) ? `<small>${esc(sub(s))}</small>` : ''}</span><span class="ln">${s.len ? fmtTime(s.len) : ''}</span><button data-jbnow="${esc(s.id)}" aria-label="Play now">▶</button></div>`).join('') ||
+    `<div class="note">${empty}</div>`);
   setHtml('#jb-queue', queue.map((id, i) => {
     const s = jbSong(id), cur = i === jb.pos && !!now;
     return `<div class="jb-row${cur ? ' cur' : ''}" data-jbplay="${i}">${disc(s)}<span class="nm">${cur ? '♪ ' : ''}${esc(s.name)}</span>
@@ -617,7 +649,7 @@ function renderJukebox() {
   }).join('') || '<div class="note">The queue is empty. Tap songs on the left to add them.</div>');
   const s = now ? jbSong(now.id) : null;
   $('#jb-now').classList.toggle('on', !!now);
-  setHtml('#jb-art', s ? disc(s) : '');
+  setHtml('#jb-art', s ? art(s) : '');
   $('#jb-title').textContent = s ? s.name : queue.length ? 'Stopped' : 'Nothing playing';
   $('#jb-time').textContent = now ? `${fmtTime(now.t)} / ${fmtTime(now.len)}` + (jb.volume === 0 ? '  ·  volume is 0' : '') : '';
   $('#jb-prog').style.width = now && now.len ? Math.min(100, Math.round(now.t / now.len * 100)) + '%' : '0%';
@@ -659,7 +691,7 @@ $('#jb-repeat').addEventListener('click', () => {
 });
 $('#jb-shuffle').addEventListener('click', () => jbAct({ op: 'shuffle' }, 'Queue shuffled'));
 $('#jb-addall').addEventListener('click', () => {
-  const ids = ((jb && jb.songs) || []).filter(s => jbFilter !== 'have' || s.have).map(s => s.id);
+  const ids = jbShown((jb && jb.songs) || []).map(s => s.id);
   if (ids.length) jbAct({ op: 'add', ids }, `Queued ${ids.length} songs`);
 });
 // Two taps: clearing loses the whole queue.

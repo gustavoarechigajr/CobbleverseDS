@@ -49,7 +49,9 @@ const RECIPES = [
 ];
 let craftable = ['minecraft:torch'];
 const recipeQueries = [];
-const jbState = { songs: [{ id: 'minecraft:cat', name: 'C418 - cat', len: 185, k: 'minecraft:music_disc_cat', have: true },
+const jbState = { musicReady: true, songs: [{ id: 'file:cobblemon:battle/wild_battle_kanto', name: 'Wild Battle Kanto', len: 102, kind: 'battle', src: 'COBBLEVERSE Soundtrack' },
+  { id: 'file:minecraft:music/game/key', name: 'Battle! N', artist: 'Game Freak', len: 136, kind: 'music', src: 'JigglyRadio' },
+  { id: 'minecraft:cat', name: 'C418 - cat', len: 185, k: 'minecraft:music_disc_cat', have: true, kind: 'disc' },
   { id: 'minecraft:pigstep', name: 'Lena Raine - Pigstep', len: 149, k: 'minecraft:music_disc_pigstep', have: false }], queue: [], pos: 0, playing: false, repeat: 'off', volume: 100 };
 const json = (o) => ({ ok: true, status: 200, json: async () => o, headers: { get: () => 'application/json' } });
 async function fakeFetch(url, opts) {
@@ -119,7 +121,7 @@ w.console.error = (...a) => errors.push(a.join(' '));
 w.addEventListener('error', e => errors.push(String(e.error && e.error.stack || e.message)));
 setState('none');
 // Test-only handle into the page's script scope (strict-mode declarations aren't globals).
-w.eval(appJs + '\nwindow.__t = { iconErr, showTab, layoutSlots, mapTap, loadMap, setLastTouch: v => { lastTouch = v; } };');
+w.eval(appJs + '\nwindow.__t = { iconErr, retryFailedIcons, showTab, layoutSlots, mapTap, loadMap, setLastTouch: v => { lastTouch = v; } };');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const $ = s => w.document.querySelector(s);
@@ -405,7 +407,11 @@ const activeTab = () => ($('#tabs button.on') || {}).dataset?.tab;
     w.__t.iconErr(img);
     check(img.isConnected && img.style.visibility === 'hidden' && img.dataset.tries === '1', 'a failed icon is hidden and retried, not removed');
     img.dataset.tries = '99'; w.__t.iconErr(img);
-    check(!img.isConnected, 'an icon that keeps failing is given up on (text fallback stays)');
+    check(img.isConnected && img.classList.contains('icon-failed'), 'an icon that keeps failing stays and keeps being retried (it may be a dropped connection)');
+    const before = img.getAttribute('src');
+    w.__t.retryFailedIcons(); await sleep(60);
+    check(img.getAttribute('src') !== before && img.getAttribute('src').startsWith('/api/icon/minecraft%3Astone'), 'when the connection comes back, failed icons are asked for again at once');
+    img.remove();
   }
 
   // ---- crafting: a crafting table opens Craft; cards keep their places ----
@@ -444,6 +450,12 @@ const activeTab = () => ($('#tabs button.on') || {}).dataset?.tab;
   check($('#jb-title').textContent === 'C418 - cat' && $('#jb-play').textContent === '■' && !!$('#jb-queue .cur'), 'now playing shows the song and a Stop key');
   $('#jb-filter [data-jbf="have"]').click(); await sleep(50);
   check(!$('#jb-songs').textContent.includes('Pigstep') && $('#jb-songs').textContent.includes('cat'), '"Discs I have" hides songs you have no disc for');
+  $('#jb-filter [data-jbf="battle"]').click(); await sleep(50);
+  check($('#jb-songs').textContent.includes('Wild Battle Kanto') && !$('#jb-songs').textContent.includes('cat') && $('#jb-songs').textContent.includes('COBBLEVERSE Soundtrack'), '"Battle" lists the pack\'s battle music, with its source pack');
+  $('#jb-filter [data-jbf="music"]').click(); await sleep(50);
+  check($('#jb-songs').textContent.includes('Battle! N') && $('#jb-songs').textContent.includes('Game Freak') && !$('#jb-songs').textContent.includes('Kanto'), '"Background" lists the pack\'s background music, with the title and artist from the file');
+  actions.length = 0; $('#jb-songs [data-jbnow]').click(); await sleep(80);
+  check(actions.some(a => a.via === 'jukebox' && a.op === 'playNow' && a.id === 'file:minecraft:music/game/key'), 'pack music can be played like a disc');
   $('#jb-filter [data-jbf="all"]').click();
   $('#jb-play').click(); await sleep(100);
   check(actions.some(a => a.via === 'jukebox' && a.op === 'stop'), 'Stop stops the music');

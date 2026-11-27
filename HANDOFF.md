@@ -126,6 +126,14 @@ soon as a run is done. Don't loop `KEYCODE_WAKEUP`.
   off for the session (the "no icons offline" report). `Icons` now waits for `mc.getOverlay() == null`, answers 503
   meanwhile, resets on every resource reload and never caches a blank render; the panel retries failed icons
   (`iconErr`) for ~5 min. `/api/debug {"op":"icons"}` shows the renderer's state.
+- **Icons after the network drops:** turning the device's network off makes the WebView abort requests in flight,
+  even to 127.0.0.1. The panel now never gives up on an icon (hidden, retried every 30 s while on screen) and
+  re-requests every failed one as soon as the connection to the game is back (`retryFailedIcons`).
+- **Pack music** (`PackMusic.java`): every `sounds/music/**` and `sounds/battle/**` .ogg the resource packs and mods
+  provide (the files Music Notification's jukebox lists), the top-priority file per path, played as that exact file
+  (`FileSound` builds a one-entry sound event). Title/artist/length come from the Ogg Vorbis headers and last page,
+  read on a background thread after each resource load (~6 s on the Thor for ~500 MB of packs). Battle intro
+  stingers and anything under 20 s are skipped.
 - **Swappable moves** are `Pokemon.getRelearnableMoves()` (what the Summary's swap screen lists; the server's
   `BenchMoveHandler` accepts anything in `getAllAccessibleMoves()`). `getBenchedMoves()` alone is usually empty.
 - **Jukebox** (`Jukebox.java`): a non-positional `SimpleSoundInstance` on the RECORDS source; a song has ended when

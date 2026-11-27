@@ -504,3 +504,9 @@ details .keys { padding: 4px 0 14px; }
 .jb-row .ln { color: var(--dim); font-size: 20px; flex: none; }
 .jb-row button { min-height: var(--tap-s); min-width: var(--tap-s); padding: 4px 10px; font-size: 24px; }
 #recipes.busy button { pointer-events: none; opacity: .6; }
+
+/* Music tab: pack music rows (no disc icon) */
+.jb-glyph { flex: none; width: 56px; text-align: center; font: 700 34px/1 var(--round); color: var(--yellow); }
+.jb-row .nm small { display: block; font: 700 17px var(--round); color: var(--dim); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+#jb-filter { flex: 1; flex-wrap: nowrap; gap: 6px; }
+#jb-filter button { flex: 1 1 auto; min-width: 0; padding-inline: 10px; }

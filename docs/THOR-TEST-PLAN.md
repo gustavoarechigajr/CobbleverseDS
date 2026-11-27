@@ -219,3 +219,13 @@ Integration suite: **31 passed, 0 failed** (all four new tests included, Cobblem
 
 Seen in passing: when the game was launched from Zalith with the panel already open, the bottom screen's home
 launcher came to the front over the panel; the app icon brought it back. Not new to this branch.
+
+### Follow-up (same day, owner's notes)
+- **"No icons" meant item and Pokémon icons after turning the network off with the game already open.** Cause: the
+  WebView aborts in-flight requests (even to localhost) when the network changes, and the panel gave up on an
+  icon after a few failures. Now icons are retried for as long as they're on screen, and all failed ones are
+  re-requested the moment the connection is back. Checked in Chromium against the live panel: with the network
+  off, one icon failed; after turning it back on, all 13 drew without reopening anything.
+- **Jukebox now has the pack's music** (Music Notification's list): 78 background tracks (JigglyRadio, COBBLEVERSE
+  Soundtrack, LumyMon) and 77 battle themes (Original Pokemon Battle Music, COBBLEVERSE Soundtrack), plus the 21
+  discs. Filters: All, Discs, Music, Battle, Mine. Played Azalea Town from the panel on the Thor.

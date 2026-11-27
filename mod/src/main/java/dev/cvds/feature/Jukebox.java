@@ -23,7 +23,8 @@ import net.minecraft.world.item.JukeboxPlayable;
 import net.minecraft.world.item.JukeboxSong;
 
 /**
- * The panel's jukebox: plays the game's music-disc songs (any jukebox song the pack registers) as a queue,
+ * The panel's jukebox: plays the game's music-disc songs (any jukebox song the pack registers) and the pack's
+ * own background and battle music ({@link PackMusic}) as a queue,
  * straight to the player like background music (no jukebox block, nothing changes in the world). Uses the
  * "Jukebox/Note Blocks" volume slider. The game's own background music waits while it plays.
  * Everything runs on the client thread (tick, and the HTTP routes go through {@code mc.submit}).
@@ -51,9 +52,12 @@ public final class Jukebox {
 
 	// ---------- song list ----------
 
-	private record Song(String id, String name, int lenTicks, String disc) {}
+	/** kind: "disc", "music" (background) or "battle". file: set for pack music (played as that one file). */
+	private record Song(String id, String name, int lenTicks, String disc, String kind, String artist, String src, ResourceLocation file) {}
 
-	private static Object songsFor; // the registry the cache was built from (one per world join)
+	private static Object songsFor; // the registry the disc list was built from (one per world join)
+	private static List<Song> discSongs = List.of();
+	private static List<PackMusic.Track> musicFor; // the pack-music list the combined list was built from
 	private static List<Song> songs = List.of();
 
 	private static Registry<JukeboxSong> registry(Minecraft mc) {
@@ -63,7 +67,19 @@ public final class Jukebox {
 	static List<Song> songs(Minecraft mc) {
 		Registry<JukeboxSong> reg = registry(mc);
 		if (reg == null) return List.of();
-		if (reg == songsFor) return songs;
+		List<PackMusic.Track> music = PackMusic.tracks(mc);
+		if (reg != songsFor) { discSongs = discs(reg); songsFor = reg; musicFor = null; }
+		if (music != musicFor) {
+			List<Song> all = new ArrayList<>(discSongs);
+			for (PackMusic.Track tr : music)
+				all.add(new Song(tr.id(), tr.name(), tr.lenTicks(), null, tr.group(), tr.artist(), tr.src(), tr.file()));
+			songs = List.copyOf(all);
+			musicFor = music;
+		}
+		return songs;
+	}
+
+	private static List<Song> discs(Registry<JukeboxSong> reg) {
 		Map<ResourceLocation, String> discs = new HashMap<>();
 		for (var item : BuiltInRegistries.ITEM) {
 			JukeboxPlayable jp;
@@ -77,12 +93,10 @@ public final class Jukebox {
 			JukeboxSong s = e.getValue();
 			String name;
 			try { name = s.description().getString(); } catch (Throwable t) { name = id.getPath(); }
-			list.add(new Song(id.toString(), name, s.lengthInTicks(), discs.get(id)));
+			list.add(new Song(id.toString(), name, s.lengthInTicks(), discs.get(id), "disc", "", "", null));
 		}
 		// Vanilla first (C418, Lena Raine, ...), then the pack's own, each by name.
 		list.sort(Comparator.comparing((Song s) -> !s.id().startsWith("minecraft:")).thenComparing(Song::name, String.CASE_INSENSITIVE_ORDER));
-		songs = list;
-		songsFor = reg;
 		return list;
 	}
 
@@ -140,13 +154,20 @@ public final class Jukebox {
 			if (pos < 0 || pos >= queue.size()) pos = 0;
 			String id = queue.get(pos);
 			Song s = song(mc, id);
-			Registry<JukeboxSong> reg = registry(mc);
-			JukeboxSong js = reg == null ? null : reg.get(ResourceLocation.tryParse(id));
-			if (s == null || js == null) { advance(1, true); continue; }
-			mc.getMusicManager().stopPlaying(); // the background track, if one is on
-			ResourceLocation sound = js.soundEvent().value().getLocation();
-			inst = new SimpleSoundInstance(sound, SoundSource.RECORDS, 1f, 1f, RandomSource.create(), false, 0,
-				SoundInstance.Attenuation.NONE, 0, 0, 0, true);
+			if (s == null && id.startsWith("file:") && !PackMusic.ready()) return; // pack music still being listed: try next tick
+			if (s == null) { advance(1, true); continue; }
+			if (s.file() != null) {
+				mc.getMusicManager().stopPlaying(); // the background track, if one is on
+				inst = new PackMusic.FileSound(s.file());
+			} else {
+				Registry<JukeboxSong> reg = registry(mc);
+				JukeboxSong js = reg == null ? null : reg.get(ResourceLocation.tryParse(id));
+				if (js == null) { advance(1, true); continue; }
+				mc.getMusicManager().stopPlaying(); // the background track, if one is on
+				ResourceLocation sound = js.soundEvent().value().getLocation();
+				inst = new SimpleSoundInstance(sound, SoundSource.RECORDS, 1f, 1f, RandomSource.create(), false, 0,
+					SoundInstance.Attenuation.NONE, 0, 0, 0, true);
+			}
 			nowId = id;
 			playedTicks = 0;
 			lengthTicks = s.lenTicks();
@@ -196,10 +217,14 @@ public final class Jukebox {
 			j.addProperty("name", s.name());
 			j.addProperty("len", Math.round(s.lenTicks() / 20f));
 			if (s.disc() != null) j.addProperty("k", s.disc()); // the disc's plain item id: its icon
+			j.addProperty("kind", s.kind());
+			if (!s.artist().isEmpty()) j.addProperty("artist", s.artist());
+			if (!s.src().isEmpty()) j.addProperty("src", s.src());
 			j.addProperty("have", have.contains(s.id()));
 			list.add(j);
 		}
 		o.add("songs", list);
+		o.addProperty("musicReady", PackMusic.ready());
 		JsonArray q = new JsonArray();
 		queue.forEach(q::add);
 		o.add("queue", q);
