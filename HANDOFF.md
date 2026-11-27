@@ -76,6 +76,11 @@ soon as a run is done. Don't loop `KEYCODE_WAKEUP`.
    `cobbleverse-ds-<version>.apk`) attached. The APK is signed with the building PC's debug key.
 
 ## Gotchas (each cost real debugging time)
+- **Files copied in over ADB are read-only to Zalith** unless made group-writable: they belong to the shell user, and
+  Zalith only gets group access. Symptom: "Failed to save version configuration … EACCES". Find and fix them with
+  `adb shell "find <.minecraft> -user 2000 -type f ! -perm -g+w -exec chmod 664 {} \\;"`.
+- **Offline launch (plane):** turn on *skip game integrity check* for the Cobbleverse version in Zalith; then the game
+  opens with Wi-Fi off.
 - **Controlify must be 2.x** (2.5.2 installed): the pack's Zoomify crashes the game with Controlify 3.x.
 - **Recipe book:** Cobbleverse never unlocks recipe-book entries server-side, so the vanilla place-recipe packet
   is silently ignored. Crafting places ingredients with normal clicks (`Crafting.place`).

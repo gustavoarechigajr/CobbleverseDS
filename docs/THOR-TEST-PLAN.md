@@ -208,7 +208,7 @@ Branch build `93d1869` as `cobbleverse-ds-0.2.0.jar`, panel app 0.2.0 unchanged.
 
 | # | Result |
 |---|---|
-| 1 | **Not run.** ADB is wireless: airplane mode or Wi-Fi off cuts the connection. Owner to try by hand (steps in §1). |
+| 1 | **Pass (owner, by hand).** With *skip game integrity check* on for the Cobbleverse version, the game opened with Wi-Fi off. See the follow-up below for why the toggle wouldn't save at first. |
 | 2 | **Pass.** Panel open before launch: 11 icon requests answered 503 while loading, all 11 drawn as soon as the title screen appeared (0 failed, 0 blank). All 10 tab icons and in-world icons show. |
 | 3 | **Pass.** Lv 40 Pikachu: Change lists 16 moves (Charm … Thunder Wave), in one big-button sheet (the sheet scrolls if longer). Integration swap test passes. Not compared side by side with the in-game Summary swap list. |
 | 4 | **Pass.** Wild Snorlax battle: Bag and Poké Balls views pixel-identical across 5 screenshots over 10 s (catch chips 12% / 13%). |
@@ -229,3 +229,10 @@ launcher came to the front over the panel; the app icon brought it back. Not new
 - **Jukebox now has the pack's music** (Music Notification's list): 78 background tracks (JigglyRadio, COBBLEVERSE
   Soundtrack, LumyMon) and 77 battle themes (Original Pokemon Battle Music, COBBLEVERSE Soundtrack), plus the 21
   discs. Filters: All, Discs, Music, Battle, Mine. Played Azalea Town from the panel on the Thor.
+- **§1 offline launch works** once *skip game integrity check* is on (owner tested with Wi-Fi off). Turning it on
+  first failed with "Failed to save version configuration … version.config: open failed: EACCES". Cause: the
+  instance was copied over ADB when it was moved from Pojav, so 6 files belonged to the shell user (uid 2000) with
+  mode 644, readable but not writable by Zalith (uid 10196, group ext_data_rw): `ZalithLauncher/version.config`,
+  `ZalithLauncher/VersionIcon.png`, `Cobbleverse.json`, `servers.dat`, `servers.dat_old` and
+  `mods/controlify-2.5.2+1.21.1-fabric.jar`. Fixed with `chmod 664` on them; none are left. Identity check (§1.7)
+  not done.
