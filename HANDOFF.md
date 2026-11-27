@@ -125,7 +125,7 @@ soon as a run is done. Don't loop `KEYCODE_WAKEUP`.
 - **Haptics:** the app's `CVDSApp.haptic()` works, but the Thor plays touch vibrations at 0 strength (system setting).
 - **Catch chance** runs Cobblemon's configured capture calculator 1200 times on a ball entity that is never added to
   the world, cached per ball/target/HP/status. Test battles: `pokespawn` 3 blocks ahead at pitch 20, then send out.
-- **Panel tap on the status bar's right side cycles the idle-dark delay**; wake the panel by tapping the middle.
+- **Panel tap on the status bar's right side cycles the idle-dim delay** (black comes 10 min after the last touch, or at once when idle outside a world); wake the panel by tapping the middle.
 - **Icons before the game has loaded:** the mod's server (and so the panel) is up long before item models are. Drawing
   then throws (NPE in `ItemRenderer.getModel`); the old code cached that and after 10 failures switched every icon
   off for the session (the "no icons offline" report). `Icons` now waits for `mc.getOverlay() == null`, answers 503

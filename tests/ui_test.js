@@ -371,12 +371,28 @@ const activeTab = () => ($('#tabs button.on') || {}).dataset?.tab;
   check(!$('#screenpad').classList.contains('hidden'), 'the mirror also works outside a world (title screen)');
   setState('none'); await sleep(300);
 
-  // idle blackout
-  w.__t.setLastTouch(Date.now() - 10 * 60 * 1000);
+  // idle: dim first, black after 10 minutes or when not in a world
+  w.__t.setLastTouch(Date.now() - 50 * 1000);
   await sleep(1200);
-  check($('#shade').classList.contains('on'), 'screen goes dark when idle');
+  check($('#shade').classList.contains('dim') && !$('#shade').classList.contains('on'), 'screen dims (not black) after the idle time');
+  w.__t.setLastTouch(Date.now() - 11 * 60 * 1000);
+  await sleep(1200);
+  check($('#shade').classList.contains('on') && !$('#shade').classList.contains('dim'), 'screen goes black after 10 minutes untouched');
   setState('chest'); await sleep(200);
-  check(!$('#shade').classList.contains('on'), 'opening a container wakes the screen');
+  check(!$('#shade').classList.contains('on') && !$('#shade').classList.contains('dim'), 'a container wakes it from black');
+  st = { inGame: false, screen: { kind: 'menu', cls: 'net.minecraft.class_442', title: 'Title screen' } }; rev++;
+  await sleep(400);
+  w.__t.setLastTouch(Date.now() - 50 * 1000);
+  await sleep(1200);
+  check($('#shade').classList.contains('on'), 'idle outside a world goes straight to black');
+  $('#shade').dispatchEvent(new w.Event('pointerup')); await sleep(50);
+  check(!$('#shade').classList.contains('on'), 'a tap on the shade wakes it');
+  setState('none'); await sleep(300);
+  w.__t.setLastTouch(Date.now() - 50 * 1000);
+  await sleep(1200);
+  check($('#shade').classList.contains('dim'), 'dims again when idle');
+  setState('chest'); await sleep(200);
+  check(!$('#shade').classList.contains('dim'), 'opening a container wakes the screen');
 
   w.__t.showTab('spawns'); await sleep(200);
   const row = $('#sp-list [data-sp]');

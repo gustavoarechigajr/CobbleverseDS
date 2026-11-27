@@ -468,6 +468,7 @@ details .keys { padding: 4px 0 14px; }
 #toast.info { border-left-color: var(--blue); }
 #shade { position: fixed; inset: -20px; background: #000; display: none; z-index: 100; }
 #shade.on { display: block; }
+#shade.dim { display: block; background: rgba(0, 0, 0, .7); } /* ~30% brightness, still readable */
 
 @media (prefers-reduced-motion: reduce) { button:active { transform: none; } }
 

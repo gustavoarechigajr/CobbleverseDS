@@ -2072,33 +2072,50 @@ window.addEventListener('pagehide', unfocus);
 document.addEventListener('visibilitychange', () => { if (document.hidden) unfocus(); });
 
 // ---------- OLED care ----------
-// The panel goes fully black after a while without touches (black OLED pixels are off), and
-// everything drifts a few pixels every minute so nothing sits on the same pixels for hours.
+// Burn-in comes from bright content standing still for hours. After a while without touches the panel dims
+// to about 30% brightness (still readable), and drifts a few pixels every 20 s instead of every minute. After
+// 10 minutes untouched, or once idle while not in a world (title screen, loading, game closed), it goes fully
+// black (black OLED pixels are off). Any tap brightens it without pressing what's underneath; battles and
+// containers wake it on their own.
 const IDLE_CHOICES = [15, 30, 45, 60, 120, 300];
+const BLACK_AFTER_MS = 10 * 60 * 1000;
 let idleSec = store.get('idleSec', 45);
 let lastTouch = Date.now();
 const shade = document.createElement('div');
 shade.id = 'shade';
-document.body.appendChild(shade);
-function setDark(d) {
-  shade.classList.toggle('on', d);
-  if (!d) lastTouch = Date.now();
+// outside <body>: the drift moves and clips the body, which would leave a sliver of the page uncovered at the edges
+document.documentElement.appendChild(shade);
+/** 0 = awake, 1 = dim, 2 = black. */
+function setShade(level) {
+  shade.classList.toggle('dim', level === 1);
+  shade.classList.toggle('on', level === 2);
+  if (!level) lastTouch = Date.now();
   else if (document.activeElement && document.activeElement.matches('input')) document.activeElement.blur();
 }
-function isDark() { return shade.classList.contains('on'); }
+function shadeLevel() { return shade.classList.contains('on') ? 2 : shade.classList.contains('dim') ? 1 : 0; }
+function setDark(d) { setShade(d ? 2 : 0); }
+function isDark() { return shadeLevel() > 0; }
 document.addEventListener('pointerdown', () => { lastTouch = Date.now(); }, true);
 // The waking tap lands on the shade, so it never presses whatever is underneath.
-shade.addEventListener('pointerup', () => setTimeout(() => setDark(false), 0));
-setInterval(() => { if (!isDark() && Date.now() - lastTouch > idleSec * 1000) setDark(true); }, 1000);
-function wake() { setDark(false); }
+shade.addEventListener('pointerup', () => setTimeout(() => setShade(0), 0));
 setInterval(() => {
+  const idle = Date.now() - lastTouch, lvl = shadeLevel();
+  if (idle <= idleSec * 1000) return;
+  const want = idle > BLACK_AFTER_MS || !(state && state.inGame) ? 2 : 1;
+  if (want > lvl) setShade(want);
+}, 1000);
+function wake() { setShade(0); }
+let lastDrift = 0;
+setInterval(() => {
+  if (shadeLevel() !== 1 && Date.now() - lastDrift < 60000) return;
+  lastDrift = Date.now();
   const dx = Math.round(Math.random() * 6 - 3), dy = Math.round(Math.random() * 6 - 3);
   document.body.style.transform = `translate(${dx}px, ${dy}px)`;
-}, 60000);
+}, 20000);
 $('#st-side').addEventListener('click', () => {
   idleSec = IDLE_CHOICES[(IDLE_CHOICES.indexOf(idleSec) + 1) % IDLE_CHOICES.length];
   store.set('idleSec', idleSec);
-  toast(`Screen goes dark after ${idleSec < 60 ? idleSec + ' s' : idleSec / 60 + ' min'} without touches`, true);
+  toast(`Screen dims after ${idleSec < 60 ? idleSec + ' s' : idleSec / 60 + ' min'} without touches, goes dark after 10 min`, true);
 });
 
 renderQuick();

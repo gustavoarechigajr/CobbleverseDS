@@ -30,7 +30,7 @@ becomes a touch panel for the things a controller is bad at.
 The status bar shows coordinates, biome, day and time, weather, whether you can sleep, health, food and level.
 
 ### OLED care
-- After 45 s without a touch, the panel goes fully black. A tap wakes it, and that tap isn't treated as an action. Tap the right side of the status bar to change the delay (15 s to 5 min).
+- After 45 s without a touch, the panel dims to about 30% brightness and drifts a few pixels every 20 s. It goes fully black after 10 minutes without a touch, or straight away when you're not in a world. A tap brightens it, and that tap isn't treated as an action. Battles and containers wake it on their own. Tap the right side of the status bar to change the dim delay (15 s to 5 min).
 - Everything drifts by up to 3 px every minute.
 - The "waiting for Minecraft" screen goes black after 20 s.
 - The app never forces the screen to stay on.
@@ -86,7 +86,7 @@ The local API only accepts requests from its own page: POSTs need the `X-CVDS: 1
 The panel is styled as a Pokédex, after Cobbleverse's own Pokédex menu art and logo: a red shell, a blue lens, and three LEDs that show the connection (green: connected, yellow: no world loaded, red: game not reachable). Keys use the logo's black-outlined sticker look; slots copy the Cobblemon Interface pack. Fonts: Pixelify Sans and Nunito (SIL OFL, bundled in `web/fonts`). `python3 -I tests/mock_server.py` serves the UI with sample data for design work without a game.
 
 ## Tests
-- UI: `cd tests && npm install && node ui_test.js` runs the real page in jsdom against a fake server (tab auto-switching, tap-tap moves, battle/PC/terminal panels, idle blackout). `node tests/typechart_test.js` checks the type chart.
+- UI: `cd tests && npm install && node ui_test.js` runs the real page in jsdom against a fake server (tab auto-switching, tap-tap moves, battle/PC/terminal panels, idle dim and blackout). `node tests/typechart_test.js` checks the type chart.
 - Unit tests: `cd mod && ./gradlew test` (HTTP parsing, and fuzzing of the move and sort planner against a model of vanilla click rules).
 - Integration: start the game with debug on (`-Dcvds.debug=true`, or `"debug": true` in
   `config/cvds.json`), then `python3 -I tests/integration.py --world cvds-test`. Use a
