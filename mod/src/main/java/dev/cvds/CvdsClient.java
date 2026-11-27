@@ -21,6 +21,7 @@ public final class CvdsClient implements ClientModInitializer {
 			Snapshot.tick(mc);
 			Icons.tick(mc);
 			MapTiles.tick(mc);
+			Jukebox.tick(mc);
 			if (config.debug) Debug.tick(mc);
 			if (Snapshot.TOMS) TerminalTick.tick(mc);
 		});

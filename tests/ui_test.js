@@ -37,9 +37,20 @@ const STATES = {
   terminal: () => Object.assign(base(), { screen: { kind: 'container', terminal: true, title: 'S. Terminal' }, menu: { id: 5, slots: inventorySlots(0) } }),
   pc: () => Object.assign(base(), { screen: { kind: 'pc' }, menu: { id: 0, slots: inventorySlots(9) } }),
   battle: () => Object.assign(base(), { screen: { kind: 'other' }, battle: true, menu: { id: 0, slots: inventorySlots(9) } }),
+  table: () => Object.assign(base(), { screen: { kind: 'container', title: 'Crafting' }, menu: { id: 7, grid: [3, 3], slots: inventorySlots(10) } }),
 };
 function setState(name) { st = STATES[name](); rev++; }
 let caveMap = false;
+const torchIngr = [{ k: 'minecraft:coal', need: 1, have: 23 }, { k: 'minecraft:stick', need: 1, have: 8 }];
+const RECIPES = [
+  { id: 'minecraft:torch', k: 'minecraft:torch', n: 4, name: 'Torch', fav: false, ingr: torchIngr },
+  { id: 'minecraft:stick', k: 'minecraft:stick', n: 4, name: 'Stick', fav: false, ingr: [{ k: 'minecraft:oak_planks', need: 2, have: 4 }] },
+  { id: 'minecraft:ladder', k: 'minecraft:ladder', n: 3, name: 'Ladder', fav: false, ingr: [{ k: 'minecraft:stick', need: 7, have: 12 }] },
+];
+let craftable = ['minecraft:torch'];
+const recipeQueries = [];
+const jbState = { songs: [{ id: 'minecraft:cat', name: 'C418 - cat', len: 185, k: 'minecraft:music_disc_cat', have: true },
+  { id: 'minecraft:pigstep', name: 'Lena Raine - Pigstep', len: 149, k: 'minecraft:music_disc_pigstep', have: false }], queue: [], pos: 0, playing: false, repeat: 'off', volume: 100 };
 const json = (o) => ({ ok: true, status: 200, json: async () => o, headers: { get: () => 'application/json' } });
 async function fakeFetch(url, opts) {
   const u = new URL(url, 'http://x');
@@ -52,8 +63,25 @@ async function fakeFetch(url, opts) {
     actions.push(JSON.parse(opts.body)); return json({ ok: true });
   }
   if (u.pathname === '/api/keys') return json({ ok: true, keys: [{ id: 'key.inventory', label: 'Inventory', cat: 'Inventory', bound: 'E' }, { id: 'key.sneak', label: 'Sneak', cat: 'Movement', bound: 'Shift', held: false }] });
-  if (u.pathname === '/api/recipes') return json({ ok: true, recipes: [{ id: 'minecraft:torch', k: 'minecraft:torch', n: 4, name: 'Torch', can: true, fav: false,
-    ingr: [{ k: 'minecraft:coal', need: 1, have: 23 }, { k: 'minecraft:stick', need: 1, have: 8 }] }], items: {} });
+  if (u.pathname === '/api/recipes') {
+    recipeQueries.push(Object.fromEntries(u.searchParams));
+    // Like the mod: what can be made now (by name), plus every recipe in keep= even if it can't be made any more.
+    const keep = (u.searchParams.get('keep') || '').split(',').filter(Boolean);
+    const list = RECIPES.filter(r => craftable.includes(r.id) || keep.includes(r.id)).map(r => Object.assign({}, r, { can: craftable.includes(r.id) }));
+    list.sort((a, b) => (keep.includes(a.id) ? 0 : 1) - (keep.includes(b.id) ? 0 : 1) || a.name.localeCompare(b.name));
+    return json({ ok: true, recipes: list, items: {} });
+  }
+  if (u.pathname === '/api/jukebox') {
+    if (opts && opts.method === 'POST') {
+      const b = JSON.parse(opts.body); actions.push(Object.assign({ via: 'jukebox' }, b));
+      if (b.op === 'add') jbState.queue.push(...(b.ids || [b.id]));
+      if (b.op === 'play') { jbState.playing = true; jbState.pos = b.i || 0; jbState.now = { id: jbState.queue[jbState.pos], t: 3, len: 185 }; }
+      if (b.op === 'stop') { jbState.playing = false; delete jbState.now; }
+      if (b.op === 'remove') jbState.queue.splice(b.i, 1);
+      return json(Object.assign({ ok: true }, JSON.parse(JSON.stringify(jbState))));
+    }
+    return json(Object.assign({ ok: true }, JSON.parse(JSON.stringify(jbState))));
+  }
   if (u.pathname === '/api/chat') return json({ ok: true, lines: ['hello'], rich: [[['<Ash> ', '', false], ['hi', '#ff5555', true]]] });
   if (u.pathname === '/api/pc') return json({ sig: 's1', open: true, party: st.party.slots, boxes: [{ name: 'Box 1', slots: [{ id: 'p1', name: 'Eevee', species: 'Eevee', lvl: 5, types: ['Normal'], ivs: { HP: 31 }, ivTotal: 31, moves: ['Tackle'] }, ...Array(29).fill({})] }], items: {}, sortModes: ['NAME'] });
   if (u.pathname === '/api/terminal') return json({ sig: 't1', open: true, menu: 5, list: [{ k: 'minecraft:diamond', n: 1234 }], items: { 'minecraft:diamond': { name: 'Diamond', max: 64 } }, free: 10, slots: 54 });
@@ -91,7 +119,7 @@ w.console.error = (...a) => errors.push(a.join(' '));
 w.addEventListener('error', e => errors.push(String(e.error && e.error.stack || e.message)));
 setState('none');
 // Test-only handle into the page's script scope (strict-mode declarations aren't globals).
-w.eval(appJs + '\nwindow.__t = { showTab, layoutSlots, mapTap, loadMap, setLastTouch: v => { lastTouch = v; } };');
+w.eval(appJs + '\nwindow.__t = { iconErr, showTab, layoutSlots, mapTap, loadMap, setLastTouch: v => { lastTouch = v; } };');
 
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 const $ = s => w.document.querySelector(s);
@@ -180,7 +208,7 @@ const activeTab = () => ($('#tabs button.on') || {}).dataset?.tab;
   check(actions.some(a => a.kind === 'pokemon' && a.op === 'swapMoves' && a.a === 0 && a.b === 1), '▼ reorders moves');
   $('#pk-body [data-pkchg="0"]').click(); await sleep(20);
   [...$$('#sheet [data-opt]')].find(b => b.textContent.includes('Thunder Shock')).click(); await sleep(50);
-  check(actions.some(a => a.op === 'benchMove' && a.from === 'thunderbolt' && a.to === 'thundershock'), 'Change swaps in a move it knew before');
+  check(actions.some(a => a.op === 'benchMove' && a.from === 'thunderbolt' && a.to === 'thundershock'), 'Change swaps in another move it can use');
   $('#pk-evo [data-pkevo]').click(); await sleep(20);
   [...$$('#sheet [data-opt]')].find(b => b.textContent.includes('Evolve')).click(); await sleep(50);
   check(actions.some(a => a.op === 'evolve' && a.i === 0), 'Evolve sends the chosen evolution');
@@ -254,6 +282,11 @@ const activeTab = () => ($('#tabs button.on') || {}).dataset?.tab;
   $('#b-views [data-bv="bag"]').click(); await sleep(100);
   check(!$('#b-bag').classList.contains('hidden') && $('#b-moves').classList.contains('hidden'), 'Bag view replaces the moves');
   check($('#b-bag').textContent.includes('Max Revive') && $('#b-bag').textContent.includes('Ether'), 'Bag lists battle items');
+  {
+    const row = $('#b-bag .bi');
+    await sleep(1400); // two battle refreshes
+    check(row.isConnected, 'the Bag is not rebuilt by the battle refresh (no icon flicker)');
+  }
   $('#b-bag [data-bi="cobblemon:max_revive"]').click(); await sleep(20);
   check(!!$('#b-bag [data-use]'), 'tapping an item shows who it can be used on');
   actions.length = 0; $('#b-bag [data-use]').click(); await sleep(100);
@@ -363,6 +396,60 @@ const activeTab = () => ($('#tabs button.on') || {}).dataset?.tab;
   caveMap = true; w.__t.showTab('map'); await w.__t.loadMap(); await sleep(50);
   check($('#map-info').textContent.includes('Cave map · y -33 to 31'), 'underground the map says it shows the cave layer');
   caveMap = false;
+
+  // ---- icons: a failed icon is retried, not dropped (the game may still be starting) ----
+  {
+    const img = w.document.createElement('img');
+    img.setAttribute('src', '/api/icon/minecraft%3Astone');
+    $('#grid').appendChild(img);
+    w.__t.iconErr(img);
+    check(img.isConnected && img.style.visibility === 'hidden' && img.dataset.tries === '1', 'a failed icon is hidden and retried, not removed');
+    img.dataset.tries = '99'; w.__t.iconErr(img);
+    check(!img.isConnected, 'an icon that keeps failing is given up on (text fallback stays)');
+  }
+
+  // ---- crafting: a crafting table opens Craft; cards keep their places ----
+  craftable = ['minecraft:torch', 'minecraft:stick'];
+  w.__t.showTab('party'); await sleep(50);
+  setState('table'); await sleep(400);
+  check(activeTab() === 'craft', 'opening a crafting table switches to the Craft tab');
+  const names = () => $$('#recipes .card .name').map(e => e.textContent.replace(/ ×\d+$/, ''));
+  check(names().join() === 'Stick,Torch', 'crafting table lists what can be made (' + names().join() + ')');
+  const firstCard = $('#recipes .card');
+  // Crafting all the planks: Stick can't be made now, Ladder can.
+  craftable = ['minecraft:torch', 'minecraft:ladder'];
+  actions.length = 0;
+  $('#recipes .card[data-id="minecraft:torch"] [data-c="1"]').click(); await sleep(600);
+  check(actions.some(a => a.kind === 'craft' && a.id === 'minecraft:torch'), 'Craft 1 sends the craft');
+  check((recipeQueries[recipeQueries.length - 1].keep || '').includes('minecraft:stick'), 'the reload asks to keep the cards already shown');
+  check(names().join() === 'Stick,Torch,Ladder', 'cards keep their places after a craft; new ones join at the end (' + names().join() + ')');
+  const stick = $('#recipes .card[data-id="minecraft:stick"]');
+  check(stick && stick.classList.contains('no') && stick.querySelector('[data-c="1"]').disabled, 'a recipe you can no longer make stays, greyed out');
+  setState('none'); await sleep(300);
+  check(activeTab() === 'party', 'closing the crafting table goes back to the previous tab');
+  setState('chest'); await sleep(300);
+  check(activeTab() === 'storage', 'a chest still opens Storage');
+  setState('none'); await sleep(200);
+  void firstCard;
+
+  // ---- jukebox ----
+  w.__t.showTab('music'); await sleep(300);
+  check($('#jb-songs').textContent.includes('C418 - cat') && $('#jb-songs').textContent.includes('3:05'), 'Music lists the songs with their length');
+  actions.length = 0;
+  $('#jb-songs [data-jbadd="minecraft:cat"]').click(); await sleep(100);
+  check(actions.some(a => a.via === 'jukebox' && a.op === 'add' && a.id === 'minecraft:cat'), 'tapping a song queues it');
+  check($('#jb-queue').textContent.includes('C418 - cat'), 'the queue shows it');
+  $('#jb-queue [data-jbplay="0"]').click(); await sleep(100);
+  check(actions.some(a => a.via === 'jukebox' && a.op === 'play' && a.i === 0), 'tapping a queued song plays from there');
+  check($('#jb-title').textContent === 'C418 - cat' && $('#jb-play').textContent === '■' && !!$('#jb-queue .cur'), 'now playing shows the song and a Stop key');
+  $('#jb-filter [data-jbf="have"]').click(); await sleep(50);
+  check(!$('#jb-songs').textContent.includes('Pigstep') && $('#jb-songs').textContent.includes('cat'), '"Discs I have" hides songs you have no disc for');
+  $('#jb-filter [data-jbf="all"]').click();
+  $('#jb-play').click(); await sleep(100);
+  check(actions.some(a => a.via === 'jukebox' && a.op === 'stop'), 'Stop stops the music');
+  const songRow = $('#jb-songs .jb-row');
+  await sleep(1300);
+  check(songRow.isConnected, 'the song list is not rebuilt by the 1 s refresh when nothing changed');
 
   check(errors.length === 0, 'no console errors' + (errors.length ? ': ' + errors[0] : ''));
   console.log(failures ? `\n${failures} UI checks failed` : '\nall UI checks passed');

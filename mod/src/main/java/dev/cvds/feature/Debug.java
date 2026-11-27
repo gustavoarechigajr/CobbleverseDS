@@ -58,6 +58,7 @@ public final class Debug {
 				if (pendingWorld != null || busy(mc)) return Api.error("a world is already loading");
 				pendingWorld = a.get("name").getAsString();
 			}
+			case "icons" -> { return Icons.stats(); }
 			case "info" -> {
 				JsonObject r = Api.ok();
 				r.addProperty("player", mc.player == null ? "" : mc.player.getGameProfile().getName());

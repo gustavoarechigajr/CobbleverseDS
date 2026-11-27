@@ -9,7 +9,7 @@ mod does; this file is about working on it.
 | `mod/` | Fabric 1.21.1 client mod `cvds` (Java 21, Mojang mappings). `src/main/java/dev/cvds/feature/*` = features, `net/MiniHttpServer` = tiny HTTP server, `inv/` = pure, unit-tested logic (click planner, spawn text parser). |
 | `mod/src/main/resources/assets/cvds/web/` | The touch UI (`index.html`, `app.js`, `app.css`, `fonts/`). Served by the mod at `http://127.0.0.1:25599/`. |
 | `android/` | WebView wrapper app for the bottom screen (`dev.cvds.app`), built by `android/build.sh` without Gradle. |
-| `tests/integration.py` | End-to-end tests against a running game (27 tests). |
+| `tests/integration.py` | End-to-end tests against a running game (31 tests). |
 | `tests/ui_test.js` | jsdom UI test against a fake server; `tests/typechart_test.js`; `tests/mock_server.py` (sample-data server for UI design); `tests/perf.py` (FPS sampling). |
 | `tools/thor.sh` | ADB helper (screenshots of each screen, taps, keys). `tools/worldexport/` = the jar used once to export a world out of PojavLauncher. |
 
@@ -121,6 +121,17 @@ soon as a run is done. Don't loop `KEYCODE_WAKEUP`.
 - **Catch chance** runs Cobblemon's configured capture calculator 1200 times on a ball entity that is never added to
   the world, cached per ball/target/HP/status. Test battles: `pokespawn` 3 blocks ahead at pitch 20, then send out.
 - **Panel tap on the status bar's right side cycles the idle-dark delay**; wake the panel by tapping the middle.
+- **Icons before the game has loaded:** the mod's server (and so the panel) is up long before item models are. Drawing
+  then throws (NPE in `ItemRenderer.getModel`); the old code cached that and after 10 failures switched every icon
+  off for the session (the "no icons offline" report). `Icons` now waits for `mc.getOverlay() == null`, answers 503
+  meanwhile, resets on every resource reload and never caches a blank render; the panel retries failed icons
+  (`iconErr`) for ~5 min. `/api/debug {"op":"icons"}` shows the renderer's state.
+- **Swappable moves** are `Pokemon.getRelearnableMoves()` (what the Summary's swap screen lists; the server's
+  `BenchMoveHandler` accepts anything in `getAllAccessibleMoves()`). `getBenchedMoves()` alone is usually empty.
+- **Jukebox** (`Jukebox.java`): a non-positional `SimpleSoundInstance` on the RECORDS source; a song has ended when
+  `SoundManager.isActive` turns false (counted in unpaused ticks). Volume 0 or no sound device = never active, so it
+  stops after a few tries with an error. `MusicManagerMixin` holds background music while it plays. Queue saved in
+  `config/cvds-jukebox.json`. The desktop dev client has sound only with `ALSOFT_DRIVERS=null` on a box without audio.
 
 ## Status (2026-11-26)
 Done and tested on the Thor: storage panel (any container, tap-tap moves, sort, bulk), crafting (2×2, table, Tom's

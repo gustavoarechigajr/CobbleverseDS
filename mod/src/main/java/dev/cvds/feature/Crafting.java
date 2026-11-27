@@ -21,10 +21,16 @@ public final class Crafting {
 		return mc.player.containerMenu instanceof RecipeBookMenu<?, ?> rb && rb.getRecipeBookType() == RecipeBookType.CRAFTING ? rb : null;
 	}
 
-	public static JsonObject search(Minecraft mc, String query, int limit) { return search(mc, query, limit, Set.of()); }
+	public static JsonObject search(Minecraft mc, String query, int limit) { return search(mc, query, limit, Set.of(), Set.of()); }
 
-	/** {@code favs}: recipe ids that are always listed (first), craftable or not. */
-	public static JsonObject search(Minecraft mc, String query, int limit, Set<String> favs) {
+	public static JsonObject search(Minecraft mc, String query, int limit, Set<String> favs) { return search(mc, query, limit, favs, Set.of()); }
+
+	/**
+	 * {@code favs}: recipe ids that are always listed (first), craftable or not. {@code keep}: recipe ids the panel
+	 * is already showing; they stay listed (with fresh counts) even once they can't be made, so the cards don't
+	 * shift under the player's finger after each craft.
+	 */
+	public static JsonObject search(Minecraft mc, String query, int limit, Set<String> favs, Set<String> keep) {
 		JsonObject res = new JsonObject();
 		RecipeBookMenu<?, ?> rb = craftingMenu(mc);
 		if (rb == null) { res.addProperty("error", "no crafting grid open"); return res; }
@@ -34,7 +40,7 @@ public final class Crafting {
 		mc.player.getInventory().fillStackedContents(have);
 		rb.fillCraftSlotsStackedContents(have);
 		var items = new JsonObject();
-		List<JsonObject> craftable = new ArrayList<>(), other = new ArrayList<>(), favList = new ArrayList<>();
+		List<JsonObject> craftable = new ArrayList<>(), other = new ArrayList<>(), favList = new ArrayList<>(), keptList = new ArrayList<>();
 		Set<String> seenOutputs = new HashSet<>();
 		for (RecipeHolder<CraftingRecipe> h : mc.level.getRecipeManager().getAllRecipesFor(RecipeType.CRAFTING)) {
 			CraftingRecipe r = h.value();
@@ -42,10 +48,10 @@ public final class Crafting {
 			ItemStack out = r.getResultItem(mc.level.registryAccess());
 			if (out.isEmpty()) continue;
 			String name = out.getHoverName().getString();
-			boolean fav = favs.contains(h.id().toString());
-			if (!fav && !q.isEmpty() && !name.toLowerCase(Locale.ROOT).contains(q) && !h.id().toString().contains(q)) continue;
+			boolean fav = favs.contains(h.id().toString()), kept = keep.contains(h.id().toString());
+			if (!fav && !kept && !q.isEmpty() && !name.toLowerCase(Locale.ROOT).contains(q) && !h.id().toString().contains(q)) continue;
 			boolean can = have.canCraft(r, null);
-			if (!can && q.isEmpty() && !fav) continue; // unfiltered list shows only what you can make now
+			if (!can && q.isEmpty() && !fav && !kept) continue; // unfiltered list shows only what you can make now
 			JsonObject o = new JsonObject();
 			o.addProperty("id", h.id().toString());
 			o.addProperty("k", Snapshot.describe(out, items));
@@ -88,7 +94,7 @@ public final class Crafting {
 			o.add("ingr", ingr);
 			String dedupe = o.get("k").getAsString() + can;
 			if (!seenOutputs.add(dedupe + h.id())) continue;
-			(fav ? favList : can ? craftable : other).add(o);
+			(fav ? favList : kept ? keptList : can ? craftable : other).add(o);
 		}
 		Comparator<JsonObject> byName = Comparator.comparing(o -> o.get("name").getAsString());
 		craftable.sort(byName);
@@ -96,6 +102,8 @@ public final class Crafting {
 		favList.sort(byName);
 		JsonArray list = new JsonArray();
 		for (var o : favList) list.add(o);
+		keptList.sort(byName);
+		for (var o : keptList) list.add(o); // never cut: the panel shows them in its own order
 		for (var o : craftable) { if (list.size() >= limit) break; list.add(o); }
 		for (var o : other) { if (list.size() >= limit) break; list.add(o); }
 		res.add("recipes", list);

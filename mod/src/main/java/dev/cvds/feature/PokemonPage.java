@@ -66,8 +66,23 @@ final class PokemonPage {
 		JsonArray moves = new JsonArray();
 		for (Move mv : p.getMoveSet().getMoves()) moves.add(move(mv.getTemplate(), mv.getCurrentPp(), mv.getMaxPp()));
 		o.add("moveList", moves);
+		// Moves it can swap in: the same list as the Summary's swap screen (level-up moves up to its level,
+		// evolution moves and moves it knew before, minus the ones it has now). getBenchedMoves() alone is only
+		// the "knew before" part, which is empty for most Pokémon: the page used to say "no other moves".
+		java.util.Set<String> current = new java.util.HashSet<>();
+		for (Move mv : p.getMoveSet().getMoves()) current.add(mv.getTemplate().getName());
+		java.util.Map<String, MoveTemplate> other = new java.util.LinkedHashMap<>();
+		try {
+			for (MoveTemplate t : p.getRelearnableMoves()) if (t != null) other.putIfAbsent(t.getName(), t);
+		} catch (Throwable err) {
+			// fall back to the benched moves if this Cobblemon build lacks getRelearnableMoves
+			for (BenchedMove b : p.getBenchedMoves()) other.putIfAbsent(b.getMoveTemplate().getName(), b.getMoveTemplate());
+		}
+		current.forEach(other::remove);
+		List<MoveTemplate> sorted = new ArrayList<>(other.values());
+		sorted.sort(java.util.Comparator.comparing(t -> t.getDisplayName().getString()));
 		JsonArray bench = new JsonArray();
-		for (BenchedMove b : p.getBenchedMoves()) bench.add(move(b.getMoveTemplate(), 0, 0));
+		for (MoveTemplate t : sorted) bench.add(move(t, 0, 0));
 		o.add("bench", bench);
 		JsonArray evo = new JsonArray();
 		try {

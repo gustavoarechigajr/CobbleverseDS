@@ -735,6 +735,102 @@ def battle_helper(env):
 
 
 @test
+def icons_ready_and_healthy(env):
+    """Icons draw once the game has loaded (also offline): the renderer is ready and not switched off."""
+    env.reset()
+    png = http("/api/icon/minecraft%3Ajukebox", timeout=10)
+    assert png[:8] == b"\x89PNG\r\n\x1a\n"
+    st = debug(op="icons")
+    assert st["ready"] and not st["broken"], st
+    assert st["rendered"] >= 1 and st["cached"] >= 1, st
+
+
+@test
+def crafting_table_keeps_shown_recipes(env):
+    """keep= lists recipes the panel already shows even once they can't be made (cards don't shift)."""
+    env.reset()
+    env.cmd("give @a minecraft:oak_planks 3")
+    s = env.block("minecraft:crafting_table")
+    assert s["menu"].get("grid") == [3, 3]
+    rs = http("/api/recipes?q=")
+    assert all(r["can"] for r in rs["recipes"]), "the unfiltered list is what can be made now"
+    rs = http("/api/recipes?q=&keep=minecraft%3Adiamond_pickaxe")
+    pick = next((r for r in rs["recipes"] if r["id"] == "minecraft:diamond_pickaxe"), None)
+    assert pick is not None and pick["can"] is False, pick
+
+
+@test
+def pokemon_page_lists_swappable_moves(env):
+    """Cobblemon only: the Pokémon page offers the same moves as the Summary's swap screen, and swapping works."""
+    env.reset()
+    if "party" not in state():
+        print("  (skipped: Cobblemon not loaded)")
+        return
+    env.cmd("execute as @a run clearparty @s")
+    env.cmd("execute as @a run pokegive @s pikachu level=40")
+    wait_for(lambda s: s["party"]["slots"][0].get("name"), 6, "pikachu in party")
+    time.sleep(0.5)
+    p = http("/api/pokemon?slot=0")
+    assert p["ok"], p
+    have = [m["id"] for m in p["moveList"]]
+    other = [m["id"] for m in p["bench"]]
+    assert other, f"a level 40 Pikachu has more level-up moves than its 4; got none (moves {have})"
+    assert not set(have) & set(other), (have, other)
+    old, new = have[0], other[0]
+    assert action(kind="pokemon", slot=0, op="benchMove", **{"from": old, "to": new})["ok"]
+    deadline = time.time() + 6
+    while time.time() < deadline:
+        p = http("/api/pokemon?slot=0")
+        if new in [m["id"] for m in p["moveList"]]:
+            break
+        time.sleep(0.4)
+    else:
+        raise AssertionError(f"swapping {old} for {new} did not change the moves: {[m['id'] for m in p['moveList']]}")
+    assert old in [m["id"] for m in p["bench"]], "the replaced move can be swapped back"
+
+
+@test
+def jukebox_queue_and_play(env):
+    """The panel's jukebox: song list, queue, play/next/stop. The player's saved queue is put back afterwards."""
+    env.reset()
+    j = http("/api/jukebox")
+    assert j["ok"] and j["songs"], j
+    ids = [x["id"] for x in j["songs"]]
+    assert "minecraft:cat" in ids and "minecraft:pigstep" in ids, ids[:10]
+    cat = next(x for x in j["songs"] if x["id"] == "minecraft:cat")
+    assert cat["len"] > 100 and cat.get("k") == "minecraft:music_disc_cat", cat
+    saved_queue, saved_repeat = j["queue"], j["repeat"]
+    jb = lambda **a: http("/api/jukebox", a)
+    try:
+        jb(op="clear")
+        r = jb(op="add", ids=["minecraft:cat", "minecraft:pigstep"])
+        assert r["queue"] == ["minecraft:cat", "minecraft:pigstep"], r["queue"]
+        r = jb(op="move", **{"from": 1, "to": 0})
+        assert r["queue"] == ["minecraft:pigstep", "minecraft:cat"], r["queue"]
+        r = jb(op="play", i=1)
+        assert r["playing"] and r["now"]["id"] == "minecraft:cat", r
+        time.sleep(3)
+        r = http("/api/jukebox")
+        if r.get("error"):
+            raise AssertionError("jukebox error (is the Jukebox/Note Blocks volume 0?): " + r["error"])
+        assert r["playing"] and r["now"]["id"] == "minecraft:cat" and r["now"]["t"] >= 1, r
+        r = jb(op="next")
+        assert r["playing"] and r["now"]["id"] == "minecraft:pigstep" and r["pos"] == 0, r  # wraps to the top
+        r = jb(op="stop")
+        assert not r["playing"] and "now" not in r, r
+        bad = jb(op="add", id="minecraft:not_a_song")
+        assert bad["ok"] is False, bad
+        r = jb(op="remove", i=0)
+        assert r["queue"] == ["minecraft:cat"], r["queue"]
+    finally:
+        jb(op="stop")
+        jb(op="clear")
+        if saved_queue:
+            jb(op="add", ids=saved_queue)
+        jb(op="repeat", mode=saved_repeat or "off")
+
+
+@test
 def spawn_finder(env):
     """Cobblemon only: what can spawn here, with Pokédex status."""
     env.reset()

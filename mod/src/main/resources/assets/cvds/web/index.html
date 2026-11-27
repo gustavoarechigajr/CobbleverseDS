@@ -14,15 +14,16 @@
 </header>
 <div id="app">
   <nav id="tabs">
-    <button data-tab="storage" class="on"><img class="ti" src="/api/icon/minecraft%3Achest" alt="" onload="this.parentNode.classList.add('img')" onerror="this.remove()"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h12v2H2zM1 6h14v8H1zM7 8h2v3H7z"/></svg><span>Storage</span></button>
-    <button data-tab="craft"><img class="ti" src="/api/icon/minecraft%3Acrafting_table" alt="" onload="this.parentNode.classList.add('img')" onerror="this.remove()"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h3v3H2zM6.5 2h3v3h-3zM11 2h3v3h-3zM2 6.5h3v3H2zM6.5 6.5h3v3h-3zM11 6.5h3v3h-3zM2 11h3v3H2zM6.5 11h3v3h-3zM11 11h3v3h-3z"/></svg><span>Craft</span></button>
-    <button data-tab="keys"><img class="ti" src="/api/icon/minecraft%3Atrial_key" alt="" onload="this.parentNode.classList.add('img')" onerror="this.remove()"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 5h6v6H2zM4 7h2v2H4zM8 7h7v2H8zM12 9h2v3h-2zM9 9h2v2H9z"/></svg><span>Keys</span></button>
-    <button data-tab="party"><img class="ti" src="/api/icon/cobblemon%3Apoke_ball" alt="" onload="this.parentNode.classList.add('img')" onerror="this.remove()"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 1h6v1h2v2h1v3H2V4h1V2h2zM2 9h12v3h-1v2h-2v1H5v-1H3v-2H2zM6 6h4v4H6zM7 7h2v2H7z"/></svg><span>Party</span></button>
-    <button data-tab="pc"><img class="ti" src="/api/icon/cobblemon%3Apc" alt="" onload="this.parentNode.classList.add('img')" onerror="this.remove()"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 2h14v9H1zM3 4h10v5H3zM6 12h4v1H6zM4 13h8v2H4z"/></svg><span>PC</span></button>
-    <button data-tab="battle"><img class="ti" src="/api/icon/minecraft%3Adiamond_sword" alt="" onload="this.parentNode.classList.add('img')" onerror="this.remove()"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9 1h4l-3 5h3l-6 9 1-6H5z"/></svg><span>Battle</span></button>
-    <button data-tab="spawns"><img class="ti" src="/api/icon/minecraft%3Ashort_grass" alt="" onload="this.parentNode.classList.add('img')" onerror="this.remove()"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 14h12v1H2zM3 9h2v5H3zM6 6h2v8H6zM9 8h2v6H9zM12 10h1v4h-1zM4 7h1v2H4zM8 4h1v2H8zM11 6h1v2h-1z"/></svg><span>Spawns</span></button>
-    <button data-tab="map"><img class="ti" src="/api/icon/minecraft%3Afilled_map" alt="" onload="this.parentNode.classList.add('img')" onerror="this.remove()"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 3l4-2 6 2 4-2v12l-4 2-6-2-4 2zM5 3v10M11 5v10"/></svg><span>Map</span></button>
-    <button data-tab="chat"><img class="ti" src="/api/icon/minecraft%3Awritable_book" alt="" onload="this.parentNode.classList.add('img')" onerror="this.remove()"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 2h14v9H7l-4 3v-3H1zM4 5h8v1H4zM4 7h6v1H4z"/></svg><span>Chat</span></button>
+    <button data-tab="storage" class="on"><img class="ti" src="/api/icon/minecraft%3Achest" alt="" onload="this.parentNode.classList.add('img')" onerror="window.iconErr ? iconErr(this) : this.remove()"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 4h12v2H2zM1 6h14v8H1zM7 8h2v3H7z"/></svg><span>Storage</span></button>
+    <button data-tab="craft"><img class="ti" src="/api/icon/minecraft%3Acrafting_table" alt="" onload="this.parentNode.classList.add('img')" onerror="window.iconErr ? iconErr(this) : this.remove()"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 2h3v3H2zM6.5 2h3v3h-3zM11 2h3v3h-3zM2 6.5h3v3H2zM6.5 6.5h3v3h-3zM11 6.5h3v3h-3zM2 11h3v3H2zM6.5 11h3v3h-3zM11 11h3v3h-3z"/></svg><span>Craft</span></button>
+    <button data-tab="keys"><img class="ti" src="/api/icon/minecraft%3Atrial_key" alt="" onload="this.parentNode.classList.add('img')" onerror="window.iconErr ? iconErr(this) : this.remove()"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 5h6v6H2zM4 7h2v2H4zM8 7h7v2H8zM12 9h2v3h-2zM9 9h2v2H9z"/></svg><span>Keys</span></button>
+    <button data-tab="party"><img class="ti" src="/api/icon/cobblemon%3Apoke_ball" alt="" onload="this.parentNode.classList.add('img')" onerror="window.iconErr ? iconErr(this) : this.remove()"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M5 1h6v1h2v2h1v3H2V4h1V2h2zM2 9h12v3h-1v2h-2v1H5v-1H3v-2H2zM6 6h4v4H6zM7 7h2v2H7z"/></svg><span>Party</span></button>
+    <button data-tab="pc"><img class="ti" src="/api/icon/cobblemon%3Apc" alt="" onload="this.parentNode.classList.add('img')" onerror="window.iconErr ? iconErr(this) : this.remove()"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 2h14v9H1zM3 4h10v5H3zM6 12h4v1H6zM4 13h8v2H4z"/></svg><span>PC</span></button>
+    <button data-tab="battle"><img class="ti" src="/api/icon/minecraft%3Adiamond_sword" alt="" onload="this.parentNode.classList.add('img')" onerror="window.iconErr ? iconErr(this) : this.remove()"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9 1h4l-3 5h3l-6 9 1-6H5z"/></svg><span>Battle</span></button>
+    <button data-tab="spawns"><img class="ti" src="/api/icon/minecraft%3Ashort_grass" alt="" onload="this.parentNode.classList.add('img')" onerror="window.iconErr ? iconErr(this) : this.remove()"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M2 14h12v1H2zM3 9h2v5H3zM6 6h2v8H6zM9 8h2v6H9zM12 10h1v4h-1zM4 7h1v2H4zM8 4h1v2H8zM11 6h1v2h-1z"/></svg><span>Spawns</span></button>
+    <button data-tab="map"><img class="ti" src="/api/icon/minecraft%3Afilled_map" alt="" onload="this.parentNode.classList.add('img')" onerror="window.iconErr ? iconErr(this) : this.remove()"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 3l4-2 6 2 4-2v12l-4 2-6-2-4 2zM5 3v10M11 5v10"/></svg><span>Map</span></button>
+    <button data-tab="music"><img class="ti" src="/api/icon/minecraft%3Ajukebox" alt="" onload="this.parentNode.classList.add('img')" onerror="window.iconErr ? iconErr(this) : this.remove()"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6 2h8v9h-1V5H7v8H6zM3 11h4v4H3zM10 9h4v4h-4z"/></svg><span>Music</span></button>
+    <button data-tab="chat"><img class="ti" src="/api/icon/minecraft%3Awritable_book" alt="" onload="this.parentNode.classList.add('img')" onerror="window.iconErr ? iconErr(this) : this.remove()"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M1 2h14v9H7l-4 3v-3H1zM4 5h8v1H4zM4 7h6v1H4z"/></svg><span>Chat</span></button>
   </nav>
   <main>
     <section id="tab-storage" class="tab on">
@@ -69,7 +70,7 @@
     </section>
     <section id="tab-party" class="tab">
       <div id="party" class="party"></div>
-      <div class="bar"><button id="party-heal" class="sc" disabled><img src="/api/icon/cobblemon:potion" alt="" onerror="this.remove()">Heal party</button><div class="shortcuts" data-sc="party"></div><span class="note">Tap a Pokémon for its page · drag one onto another slot to reorder</span></div>
+      <div class="bar"><button id="party-heal" class="sc" disabled><img src="/api/icon/cobblemon:potion" alt="" onerror="window.iconErr ? iconErr(this) : this.remove()">Heal party</button><div class="shortcuts" data-sc="party"></div><span class="note">Tap a Pokémon for its page · drag one onto another slot to reorder</span></div>
     </section>
     <section id="tab-pc" class="tab">
       <div class="bar">
@@ -132,6 +133,28 @@
         <div id="map-info" class="note"></div>
       </div>
     </section>
+    <section id="tab-music" class="tab">
+      <!-- Jukebox: the game's music discs as a queue, played to you like background music -->
+      <div id="jb-now">
+        <div id="jb-art"></div>
+        <div id="jb-info"><div id="jb-title">Nothing playing</div><div id="jb-time" class="note"></div><div class="hp jb-bar"><i id="jb-prog"></i></div></div>
+        <div class="jb-ctl"><button id="jb-prev" class="nav" aria-label="Previous">⏮</button><button id="jb-play" class="nav" aria-label="Play">▶</button><button id="jb-next" class="nav" aria-label="Next">⏭</button></div>
+      </div>
+      <div id="jb-error" class="note hidden"></div>
+      <div id="jb-cols">
+        <div class="jb-col">
+          <div class="bar"><h3>Songs</h3><div class="seg" id="jb-filter"><button data-jbf="all" class="on">All</button><button data-jbf="have">Discs I have</button></div></div>
+          <div id="jb-songs" class="jb-list"></div>
+          <div class="bar"><button id="jb-addall">Queue all shown</button></div>
+        </div>
+        <div class="jb-col">
+          <div class="bar"><h3>Queue</h3><button id="jb-repeat">Repeat: off</button><button id="jb-shuffle">Shuffle</button></div>
+          <div id="jb-queue" class="jb-list"></div>
+          <div class="bar"><button id="jb-clear" class="danger">Clear queue</button></div>
+        </div>
+      </div>
+      <div class="note">Tap a song to queue it · ▶ plays it now · tap a queued song to play from there · uses the game's Jukebox/Note Blocks volume</div>
+    </section>
     <section id="tab-chat" class="tab">
       <div id="chat-log"></div>
       <div id="quick-cmds" class="chips"></div>
@@ -153,7 +176,7 @@
     <section id="pkpage" class="hidden" aria-label="Pokémon">
       <div class="pk-head">
         <button id="pk-prev" class="nav">◀</button>
-        <img id="pk-spr" alt="">
+        <img id="pk-spr" alt="" onerror="iconErr(this, 'hide')">
         <div class="pk-id"><div id="pk-name"></div><div id="pk-sub"></div><div id="pk-hp"></div></div>
         <button id="pk-next" class="nav">▶</button>
         <div class="pk-acts"><button id="pk-close">Close</button><button id="pk-game" class="hidden">Game view</button></div>

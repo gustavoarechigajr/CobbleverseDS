@@ -4,6 +4,7 @@ import com.mojang.blaze3d.pipeline.TextureTarget;
 import com.mojang.blaze3d.platform.NativeImage;
 import com.mojang.blaze3d.systems.RenderSystem;
 import com.mojang.blaze3d.vertex.VertexSorting;
+import com.google.gson.JsonObject;
 import dev.cvds.CvdsClient;
 import java.util.*;
 import java.util.concurrent.*;
@@ -31,11 +32,24 @@ public final class Icons {
 	private static final Map<String, CompletableFuture<byte[]>> PENDING = new ConcurrentHashMap<>();
 	private static final Queue<String> QUEUE = new ConcurrentLinkedQueue<>();
 	private static final Map<Integer, TextureTarget> TARGETS = new HashMap<>();
-	private static boolean broken = false;
+	private static volatile boolean broken = false;
 	private static int failuresInARow = 0;
 	private static final java.util.Set<String> FAILED = ConcurrentHashMap.newKeySet();
+	/** Rendering is only possible once the game's resources (item models, texture atlases) are loaded. */
+	private static volatile boolean ready = false;
+	private static int blanksInARow = 0;
+	private static volatile long rendered = 0, failed = 0, blanks = 0, resets = 0;
+	private static volatile String lastError = "";
 
-	/** PNG bytes for an item key, rendering it if needed. Null if the key was never seen. */
+	/** The panel can ask before the game can draw anything: it connects as soon as the mod starts. */
+	public static final class NotReady extends Exception {
+		NotReady() { super("the game is still loading", null, false, false); }
+	}
+
+	/**
+	 * PNG bytes for an item key, rendering it if needed. Null if the key was never seen (or can't be drawn).
+	 * Throws {@link NotReady} while the game is still loading, so the panel retries instead of giving up.
+	 */
 	public static byte[] get(String key, long timeoutMs) throws Exception {
 		byte[] hit = CACHE.get(key);
 		if (hit != null) return hit;
@@ -45,31 +59,86 @@ public final class Icons {
 			QUEUE.add(k);
 			return new CompletableFuture<>();
 		});
-		return f.get(timeoutMs, TimeUnit.MILLISECONDS);
+		try {
+			return f.get(timeoutMs, TimeUnit.MILLISECONDS);
+		} catch (TimeoutException e) {
+			if (!ready) throw new NotReady(); // stays queued: drawn as soon as loading finishes
+			throw e;
+		} catch (ExecutionException e) {
+			if (e.getCause() instanceof NotReady nr) throw nr;
+			return null; // this one item can't be drawn: the panel shows its name instead
+		}
 	}
 
 	public static void tick(Minecraft mc) {
+		// Startup loading and resource reloads (F3+T, resource packs) run under the loading overlay. Items drawn
+		// then come out blank or throw, and before this check that was cached for the whole session (or, after
+		// 10 failures, switched every icon off): a panel opened while the game was starting showed no icons at all.
+		boolean nowReady = mc.getOverlay() == null && mc.getItemRenderer() != null;
+		if (nowReady && !ready) reset(); // resources (re)loaded: anything drawn before may be stale
+		ready = nowReady;
+		if (!ready) return;
 		for (int i = 0; i < PER_TICK && !QUEUE.isEmpty(); i++) {
 			String key = QUEUE.poll();
 			CompletableFuture<byte[]> f = PENDING.remove(key);
 			if (f == null) continue;
 			try {
-				byte[] png = render(mc, ItemKeys.SAMPLES.get(key), key.startsWith(MON_PREFIX));
+				boolean mon = key.startsWith(MON_PREFIX);
+				byte[] png = render(mc, ItemKeys.SAMPLES.get(key), mon);
 				if (png == null) throw new IllegalStateException("no sample for " + key);
+				if (png.length == 0) {
+					// Nothing drawn (all transparent). Don't cache it: answer "not found" now and draw it again
+					// next time. Many blanks in a row means drawing itself is broken right now, so wait a bit.
+					blanks++;
+					if (++blanksInARow == 20) CvdsClient.LOG.warn("cvds: item icons keep coming out blank (last: {})", key);
+					f.complete(null);
+					continue;
+				}
+				blanksInARow = 0;
 				if (CACHE.size() >= MAX_CACHED) CACHE.clear(); // crude bound; icons re-render on demand
 				CACHE.put(key, png);
 				failuresInARow = 0;
+				rendered++;
 				f.complete(png);
 			} catch (Throwable t) {
 				// One odd modded item shouldn't cost every icon; only give up if nothing renders.
 				FAILED.add(key);
+				failed++;
+				lastError = key + ": " + t;
+				if (failuresInARow == 0) CvdsClient.LOG.warn("cvds: could not draw the icon for {}", key, t);
 				if (++failuresInARow >= 10 && !broken) {
 					broken = true;
-					CvdsClient.LOG.warn("cvds: icon rendering keeps failing, UI will fall back to text", t);
+					CvdsClient.LOG.warn("cvds: icon rendering keeps failing, UI will fall back to text until resources reload", t);
 				}
 				f.completeExceptionally(t);
 			}
 		}
+	}
+
+	/** Forgets every drawn and failed icon (after a resource reload). Pending requests stay queued. */
+	static void reset() {
+		CACHE.clear();
+		FAILED.clear();
+		broken = false;
+		failuresInARow = 0;
+		blanksInARow = 0;
+		resets++;
+	}
+
+	/** Diagnostics for /api/debug {"op":"icons"}: on-device tests check icons work (e.g. offline). */
+	static JsonObject stats() {
+		JsonObject o = Api.ok();
+		o.addProperty("ready", ready);
+		o.addProperty("broken", broken);
+		o.addProperty("cached", CACHE.size());
+		o.addProperty("queued", QUEUE.size());
+		o.addProperty("failedKeys", FAILED.size());
+		o.addProperty("rendered", rendered);
+		o.addProperty("failed", failed);
+		o.addProperty("blanks", blanks);
+		o.addProperty("resets", resets);
+		o.addProperty("lastError", lastError);
+		return o;
 	}
 
 	static byte[] render(Minecraft mc, ItemStack stack, boolean mon) throws Exception {
@@ -99,6 +168,7 @@ public final class Icons {
 				RenderSystem.bindTexture(target.getColorTextureId());
 				img.downloadTexture(0, false);
 				img.flipY();
+				if (blank(img)) return new byte[0];
 				if (!mon) return img.asByteArray();
 				try (NativeImage trimmed = trim(img)) { return trimmed.asByteArray(); }
 			}
@@ -108,6 +178,15 @@ public final class Icons {
 			RenderSystem.restoreProjectionMatrix();
 			mc.getMainRenderTarget().bindWrite(true);
 		}
+	}
+
+	/** True if no pixel is visible (nothing was drawn). */
+	static boolean blank(NativeImage img) {
+		int w = img.getWidth(), h = img.getHeight();
+		for (int y = 0; y < h; y++)
+			for (int x = 0; x < w; x++)
+				if ((img.getPixelRGBA(x, y) >>> 24) > 8) return false;
+		return true;
 	}
 
 	/** Crops to the visible pixels plus a small margin, as a square centred on them. */

@@ -48,8 +48,15 @@ public final class Api implements dev.cvds.net.MiniHttpServer.Handler {
 			return png == null ? Response.notFound() : new Response(200, "image/png", png, Map.of("Cache-Control", "no-store"));
 		}
 		if (path.startsWith("/api/icon/")) {
-			byte[] png = Icons.get(path.substring("/api/icon/".length()), 3000);
-			return png == null ? Response.notFound() : new Response(200, "image/png", png, Map.of("Cache-Control", "max-age=86400"));
+			byte[] png;
+			try {
+				png = Icons.get(path.substring("/api/icon/".length()), 3000);
+			} catch (Icons.NotReady | java.util.concurrent.TimeoutException e) {
+				// Still loading (or busy): the panel retries these. Never cached.
+				return new Response(503, "text/plain", "icons not ready".getBytes(java.nio.charset.StandardCharsets.UTF_8), Map.of("Cache-Control", "no-store", "Retry-After", "2"));
+			}
+			return png == null ? new Response(404, "text/plain", "no icon".getBytes(java.nio.charset.StandardCharsets.UTF_8), Map.of("Cache-Control", "no-store"))
+				: new Response(200, "image/png", png, Map.of("Cache-Control", "max-age=86400"));
 		}
 		Minecraft mc = Minecraft.getInstance();
 		switch (path) {
@@ -99,6 +106,13 @@ public final class Api implements dev.cvds.net.MiniHttpServer.Handler {
 				return Response.json(BattleBag.list(mc).toString());
 			}
 			case "/api/map": return onClient(mc, () -> MapApi.info(mc));
+			case "/api/jukebox": {
+				if (req.method().equals("POST")) {
+					JsonObject a = JsonParser.parseString(req.bodyText()).getAsJsonObject();
+					return onClient(mc, () -> Jukebox.act(mc, a));
+				}
+				return onClient(mc, () -> mc.level == null ? error("not in a world") : Jukebox.json(mc));
+			}
 			case "/api/pokemon": {
 				if (!Snapshot.COBBLEMON) return Response.json(error("cobblemon not installed").toString());
 				int slot = (int) parseLong(req.query().get("slot"), 0);
@@ -108,7 +122,9 @@ public final class Api implements dev.cvds.net.MiniHttpServer.Handler {
 				String q = req.query().getOrDefault("q", "");
 				Set<String> favs = new HashSet<>();
 				for (String f : req.query().getOrDefault("fav", "").split(",")) if (!f.isBlank()) favs.add(f.trim());
-				return onClient(mc, () -> mc.player == null ? error("not in game") : Crafting.search(mc, q, 60, favs));
+				Set<String> keep = new HashSet<>();
+				for (String f : req.query().getOrDefault("keep", "").split(",")) if (!f.isBlank() && keep.size() < 200) keep.add(f.trim());
+				return onClient(mc, () -> mc.player == null ? error("not in game") : Crafting.search(mc, q, 60, favs, keep));
 			}
 			case "/api/action": {
 				if (!req.method().equals("POST")) return Response.text(405, "text/plain", "POST only");

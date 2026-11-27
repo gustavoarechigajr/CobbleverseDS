@@ -102,6 +102,7 @@ function showTab(name) {
   if (name === 'battle') loadBattle();
   if (name === 'spawns') { loadSpawns.last = Date.now(); loadSpawns(); }
   if (name === 'map') loadMap();
+  if (name === 'music') loadJukebox();
   render();
 }
 $$('#tabs button').forEach(b => b.addEventListener('click', () => showTab(b.dataset.tab)));
@@ -119,19 +120,45 @@ function render() {
     lastScreenKind = kind;
     if (menuId !== lastMenuId) setSelected(null); // a selection never carries into another container
     lastMenuId = menuId;
-    if (kind === 'container' && prev !== null) { showTab('storage'); wake(); }
+    // A crafting table opens the Craft tab (and closing it goes back to where you were); other containers
+    // open Storage. Tom's crafting terminal stays on Storage, which has its network view.
+    const craftTable = kind === 'container' && isCraftTable();
+    if (kind !== 'container' && craftReturnTab) { const back = craftReturnTab; craftReturnTab = null; if (tab === 'craft') showTab(back); }
+    if (kind === 'container' && prev !== null) {
+      if (craftTable) { if (tab !== 'craft') { craftReturnTab = tab; showTab('craft'); } else loadRecipes(); }
+      else { craftReturnTab = null; showTab('storage'); }
+      wake();
+    } else if (kind === 'container' && tab === 'craft') loadRecipes();
     if (kind === 'pc' && prev !== null) { showTab('pc'); wake(); }
-    if (kind === 'container' && tab === 'craft') loadRecipes();
   }
   battleWatch();
   if (tab === 'storage') { renderGrid(); if (netActive() && !net) loadNet(); }
   if (tab === 'party') renderParty();
 }
 let lastPartySig = '';
+let craftReturnTab = null; // the tab to go back to when the crafting table that opened Craft closes
+/** A 3×3 crafting grid that isn't a storage terminal: the crafting table (or a modded one like it). */
+function isCraftTable() {
+  const g = state && state.menu && state.menu.grid;
+  return !!(g && g[0] >= 3 && g[1] >= 3 && !(state.screen && state.screen.terminal));
+}
 
 // ---------- storage ----------
 function itemInfo(k) { return (state.items && state.items[k]) || { name: k, max: 64 }; }
 function iconUrl(k) { return '/api/icon/' + encodeURIComponent(k); }
+// An icon request can fail while the game is still starting (the panel connects before the game can draw
+// items; the mod answers 503 then) or for one odd item (404). Retry for a few minutes before giving up, so a
+// panel opened during startup, or a game relaunched under an open panel, still gets its icons.
+const ICON_RETRY_MS = [1500, 3000, 5000, 8000, 12000, 20000, 30000, 30000, 30000, 30000, 30000, 30000, 30000];
+function iconErr(img, mode) {
+  const n = Number(img.dataset.tries || 0);
+  const base = img.dataset.src0 || (img.dataset.src0 = (img.getAttribute('src') || '').replace(/[?&]r=\d+$/, ''));
+  if (!base || n >= ICON_RETRY_MS.length) { if (mode === 'hide') img.style.visibility = 'hidden'; else img.remove(); return; }
+  img.dataset.tries = n + 1;
+  img.style.visibility = 'hidden'; // no broken-image box meanwhile; any text fallback stays visible
+  if (!img.dataset.retryHooked) { img.dataset.retryHooked = '1'; img.addEventListener('load', () => { img.style.visibility = ''; }); }
+  setTimeout(() => { if (img.isConnected && img.dataset.src0 === base) img.src = base + (base.includes('?') ? '&' : '?') + 'r=' + (n + 1); }, ICON_RETRY_MS[n]);
+}
 function menuSlots() { return (state.menu && state.menu.slots) || []; }
 function slotByIndex(i) { return menuSlots().find(s => s.i === i); }
 
@@ -187,7 +214,7 @@ function renderGrid(force) {
     if (s.k) {
       const info = itemInfo(s.k);
       if (q) cls += info.name.toLowerCase().includes(q) ? ' hit' : ' miss';
-      inner = `<img src="${iconUrl(s.k)}" alt="" onerror="this.remove()"><div class="txt">${esc(info.name)}</div>`;
+      inner = `<img src="${iconUrl(s.k)}" alt="" onerror="iconErr(this)"><div class="txt">${esc(info.name)}</div>`;
       if (s.n > 1) inner += `<span class="n">${s.n}</span>`;
       if (s.d != null && s.d < 1) {
         const hue = Math.round(s.d * 120);
@@ -456,7 +483,7 @@ function renderNet() {
   $('#net-info').textContent = `${net.list.length} kinds · ${net.free}/${net.slots} slots free`;
   const html = list.slice(0, 400).map(e => {
     const name = (items[e.k] || {}).name || e.k;
-    return `<div class="ni${netPins.includes(e.k) ? ' pin' : ''}" data-k="${esc(e.k)}" title="${esc(name)}"><img src="${iconUrl(e.k)}" alt="" onerror="this.remove()" onload="this.nextElementSibling.style.display='none'"><div class="txt">${esc(name)}</div><span class="n">${fmtCount(e.n)}</span></div>`;
+    return `<div class="ni${netPins.includes(e.k) ? ' pin' : ''}" data-k="${esc(e.k)}" title="${esc(name)}"><img src="${iconUrl(e.k)}" alt="" onerror="iconErr(this)" onload="this.nextElementSibling.style.display='none'"><div class="txt">${esc(name)}</div><span class="n">${fmtCount(e.n)}</span></div>`;
   }).join('');
   const g = $('#net-grid');
   if (g.dataset.html !== html) { g.innerHTML = html || '<div class="note">Nothing matches.</div>'; g.dataset.html = html; }
@@ -489,38 +516,52 @@ let recipeTimer;
 $('#craft-search').addEventListener('input', () => { clearTimeout(recipeTimer); recipeTimer = setTimeout(loadRecipes, 250); });
 
 let craftFavs = store.get('craftFavs', []);
+// The cards keep their places while a crafting grid stays open: a recipe you can no longer make stays put
+// (greyed out) and newly makeable ones join at the end. Re-sorting after every craft moved the cards under
+// the player's finger, so the next tap often hit the wrong recipe.
+let craftOrder = [], craftOrderKey = '', craftSeq = 0;
 async function loadRecipes() {
   const q = $('#craft-search').value;
+  const key = ((state && state.menu && state.menu.id) || 0) + '|' + q.trim().toLowerCase();
+  if (key !== craftOrderKey) { craftOrderKey = key; craftOrder = []; }
+  const seq = ++craftSeq;
   let res;
   try {
-    res = await api('/api/recipes?q=' + encodeURIComponent(q) + '&fav=' + encodeURIComponent(craftFavs.join(',')));
+    res = await api('/api/recipes?q=' + encodeURIComponent(q) + '&fav=' + encodeURIComponent(craftFavs.join(',')) +
+      '&keep=' + encodeURIComponent(craftOrder.slice(0, 120).join(',')));
   } catch (e) {
-    $('#recipes').innerHTML = '';
+    if (seq !== craftSeq) return;
+    setHtml('#recipes', '');
     $('#craft-note').textContent = e.message;
     return;
   }
+  if (seq !== craftSeq || key !== craftOrderKey) return; // a newer search (or another grid) took over
   if (res.error) {
-    $('#recipes').innerHTML = '';
+    craftOrder = [];
+    setHtml('#recipes', '');
     $('#craft-note').textContent = 'Open a crafting table to craft 3×3 recipes. With no screen open you can craft 2×2 recipes.';
     return;
   }
   const grid = state && state.menu && state.menu.grid;
   $('#craft-note').textContent = (grid ? `${grid[0]}×${grid[1]} grid. ` : '') + (q ? '' : 'Showing what you can make right now.');
   state.items = Object.assign({}, state.items, res.items);
-  const ingChip = g => `<span class="ing ${g.have >= g.need ? 'ok' : 'short'}" title="${esc(((state.items || {})[g.k] || {}).name || '')}"><img src="${iconUrl(g.k)}" alt="" onerror="this.remove()">${g.have}/${g.need}${g.any ? '*' : ''}</span>`;
-  $('#recipes').innerHTML = res.recipes.map(r => {
+  const byId = new Map(res.recipes.map(r => [r.id, r]));
+  const known = new Set(craftOrder);
+  craftOrder = craftOrder.filter(id => byId.has(id)).concat(res.recipes.map(r => r.id).filter(id => !known.has(id)));
+  const ingChip = g => `<span class="ing ${g.have >= g.need ? 'ok' : 'short'}" title="${esc(((state.items || {})[g.k] || {}).name || '')}"><img src="${iconUrl(g.k)}" alt="" onerror="iconErr(this)">${g.have}/${g.need}${g.any ? '*' : ''}</span>`;
+  setHtml('#recipes', craftOrder.map(id => byId.get(id)).map(r => {
     // How many sets the ingredients allow (a hint; the game caps it by what fits the grid).
     const sets = (r.ingr || []).length ? Math.min(...r.ingr.map(g => Math.floor(g.have / g.need))) : (r.can ? 1 : 0);
     const fav = craftFavs.includes(r.id);
     return `
     <div class="card ${r.can ? '' : 'no'}" data-id="${esc(r.id)}">
-      <div class="top"><img src="${iconUrl(r.k)}" alt="" onerror="this.style.visibility='hidden'">
+      <div class="top"><img src="${iconUrl(r.k)}" alt="" onerror="iconErr(this, 'hide')">
         <div class="meta"><div class="name">${esc(r.name)}${r.n > 1 ? ' ×' + r.n : ''}</div>
         <div class="ings">${(r.ingr || []).map(ingChip).join('') || `<span class="sub">${esc((r.ings || []).join(', '))}</span>`}</div></div>
         <button class="fav${fav ? ' on' : ''}" data-fav="${esc(r.id)}" title="Favourite">${fav ? '★' : '☆'}</button></div>
       <div class="acts">${[1, 4, 16].map(n => `<button data-c="${n}" ${r.can && sets >= n ? '' : 'disabled'}>${n === 1 ? 'Craft 1' : '×' + n}</button>`).join('')}<button data-c="max" ${r.can ? '' : 'disabled'}>Max${sets > 1 ? ' (' + sets + ')' : ''}</button></div>
     </div>`;
-  }).join('') || `<div class="note">${q ? 'No recipe makes "' + esc(q) + '".' : 'Nothing in your inventory can be crafted on this grid. Search for an item to see its recipe.'}</div>`;
+  }).join('') || `<div class="note">${q ? 'No recipe makes "' + esc(q) + '".' : 'Nothing in your inventory can be crafted on this grid. Search for an item to see its recipe.'}</div>`);
 }
 
 $('#recipes').addEventListener('click', async e => {
@@ -533,12 +574,107 @@ $('#recipes').addEventListener('click', async e => {
     return;
   }
   const b = e.target.closest('button[data-c]');
-  if (!b || b.disabled) return;
+  if (!b || b.disabled || busy) return;
   const id = b.closest('.card').dataset.id;
   const c = b.dataset.c;
-  await act(c === 'max' ? { kind: 'craft', id, max: true } : { kind: 'craft', id, count: Number(c) });
+  $('#recipes').classList.add('busy'); // one craft at a time: a double tap must not craft twice
+  try { await act(c === 'max' ? { kind: 'craft', id, max: true } : { kind: 'craft', id, count: Number(c) }); }
+  finally { $('#recipes').classList.remove('busy'); }
   setTimeout(loadRecipes, 300);
 });
+
+// ---------- jukebox (Music tab): the game's music discs as a queue ----------
+let jb = null, jbFilter = store.get('jbFilter', 'all'), jbBusy = false;
+const fmtTime = s => Math.floor(s / 60) + ':' + String(Math.floor(s % 60)).padStart(2, '0');
+async function loadJukebox() {
+  if (loadJukebox.busy) return;
+  loadJukebox.busy = true;
+  try { jb = await api('/api/jukebox'); } catch (e) { jb = { error: e.message, songs: [], queue: [] }; }
+  finally { loadJukebox.busy = false; }
+  renderJukebox();
+}
+async function jbAct(body, done) {
+  if (jbBusy) return;
+  jbBusy = true;
+  try { jb = await api('/api/jukebox', body); if (done) toast(done, true); }
+  catch (e) { toast(e.message); }
+  finally { jbBusy = false; }
+  renderJukebox();
+}
+function jbSong(id) { return ((jb && jb.songs) || []).find(s => s.id === id) || { id, name: id, len: 0 }; }
+function renderJukebox() {
+  if (!jb) return;
+  const songs = jb.songs || [], queue = jb.queue || [], now = jb.now;
+  const disc = s => s.k ? `<img src="${iconUrl(s.k)}" alt="" onerror="iconErr(this)">` : '';
+  $$('#jb-filter [data-jbf]').forEach(b => b.classList.toggle('on', b.dataset.jbf === jbFilter));
+  const shown = songs.filter(s => jbFilter !== 'have' || s.have);
+  setHtml('#jb-songs', shown.map(s => `<div class="jb-row" data-jbadd="${esc(s.id)}">${disc(s)}<span class="nm">${esc(s.name)}</span><span class="ln">${s.len ? fmtTime(s.len) : ''}</span><button data-jbnow="${esc(s.id)}" aria-label="Play now">▶</button></div>`).join('') ||
+    `<div class="note">${!songs.length && jb.error ? esc(jb.error) : jbFilter === 'have' ? 'No music discs in your inventory. Show "All" to play any song.' : 'This pack has no music discs.'}</div>`);
+  setHtml('#jb-queue', queue.map((id, i) => {
+    const s = jbSong(id), cur = i === jb.pos && !!now;
+    return `<div class="jb-row${cur ? ' cur' : ''}" data-jbplay="${i}">${disc(s)}<span class="nm">${cur ? '♪ ' : ''}${esc(s.name)}</span>
+      <button data-jbup="${i}" ${i === 0 ? 'disabled' : ''} aria-label="Move up">▲</button><button data-jbdn="${i}" ${i === queue.length - 1 ? 'disabled' : ''} aria-label="Move down">▼</button><button data-jbrm="${i}" aria-label="Remove">✕</button></div>`;
+  }).join('') || '<div class="note">The queue is empty. Tap songs on the left to add them.</div>');
+  const s = now ? jbSong(now.id) : null;
+  $('#jb-now').classList.toggle('on', !!now);
+  setHtml('#jb-art', s ? disc(s) : '');
+  $('#jb-title').textContent = s ? s.name : queue.length ? 'Stopped' : 'Nothing playing';
+  $('#jb-time').textContent = now ? `${fmtTime(now.t)} / ${fmtTime(now.len)}` + (jb.volume === 0 ? '  ·  volume is 0' : '') : '';
+  $('#jb-prog').style.width = now && now.len ? Math.min(100, Math.round(now.t / now.len * 100)) + '%' : '0%';
+  $('#jb-prog').style.background = 'var(--yellow)';
+  $('#jb-play').textContent = jb.playing ? '■' : '▶';
+  $('#jb-play').setAttribute('aria-label', jb.playing ? 'Stop' : 'Play');
+  $('#jb-repeat').textContent = 'Repeat: ' + ({ off: 'off', all: 'all', one: 'one' }[jb.repeat] || 'off');
+  $('#jb-repeat').classList.toggle('on', !!jb.repeat && jb.repeat !== 'off');
+  const err = songs.length ? (jb.error || '') : '';
+  $('#jb-error').textContent = err;
+  $('#jb-error').classList.toggle('hidden', !err);
+}
+$('#jb-filter').addEventListener('click', e => {
+  const b = e.target.closest('[data-jbf]');
+  if (!b) return;
+  jbFilter = b.dataset.jbf; store.set('jbFilter', jbFilter);
+  renderJukebox();
+});
+$('#jb-songs').addEventListener('click', e => {
+  const now = e.target.closest('[data-jbnow]');
+  if (now) { jbAct({ op: 'playNow', id: now.dataset.jbnow }, 'Playing ' + jbSong(now.dataset.jbnow).name); return; }
+  const add = e.target.closest('[data-jbadd]');
+  if (add) jbAct({ op: 'add', id: add.dataset.jbadd }, 'Queued ' + jbSong(add.dataset.jbadd).name);
+});
+$('#jb-queue').addEventListener('click', e => {
+  const up = e.target.closest('[data-jbup]'), dn = e.target.closest('[data-jbdn]'), rm = e.target.closest('[data-jbrm]');
+  if (up) { if (!up.disabled) { const i = Number(up.dataset.jbup); jbAct({ op: 'move', from: i, to: i - 1 }); } return; }
+  if (dn) { if (!dn.disabled) { const i = Number(dn.dataset.jbdn); jbAct({ op: 'move', from: i, to: i + 1 }); } return; }
+  if (rm) { jbAct({ op: 'remove', i: Number(rm.dataset.jbrm) }); return; }
+  const row = e.target.closest('[data-jbplay]');
+  if (row) jbAct({ op: 'play', i: Number(row.dataset.jbplay) });
+});
+$('#jb-play').addEventListener('click', () => jbAct({ op: jb && jb.playing ? 'stop' : 'play' }));
+$('#jb-next').addEventListener('click', () => jbAct({ op: 'next' }));
+$('#jb-prev').addEventListener('click', () => jbAct({ op: 'prev' }));
+$('#jb-repeat').addEventListener('click', () => {
+  const next = { off: 'all', all: 'one', one: 'off' }[(jb && jb.repeat) || 'off'];
+  jbAct({ op: 'repeat', mode: next }, next === 'off' ? 'Repeat off' : next === 'all' ? 'Repeating the queue' : 'Repeating this song');
+});
+$('#jb-shuffle').addEventListener('click', () => jbAct({ op: 'shuffle' }, 'Queue shuffled'));
+$('#jb-addall').addEventListener('click', () => {
+  const ids = ((jb && jb.songs) || []).filter(s => jbFilter !== 'have' || s.have).map(s => s.id);
+  if (ids.length) jbAct({ op: 'add', ids }, `Queued ${ids.length} songs`);
+});
+// Two taps: clearing loses the whole queue.
+$('#jb-clear').addEventListener('click', e => {
+  const b = e.currentTarget;
+  if (!(jb && (jb.queue || []).length)) return;
+  if (!b.classList.contains('armed')) {
+    b.classList.add('armed'); b.textContent = 'Tap to clear';
+    clearTimeout(b._t); b._t = setTimeout(() => { b.classList.remove('armed'); b.textContent = 'Clear queue'; }, 2500);
+    return;
+  }
+  clearTimeout(b._t); b.classList.remove('armed'); b.textContent = 'Clear queue';
+  jbAct({ op: 'clear' }, 'Queue cleared');
+});
+setInterval(() => { if (tab === 'music' && !jbBusy) loadJukebox(); }, 1000);
 
 // ---------- keybinds ----------
 let keys = [];
@@ -581,7 +717,7 @@ const SHORTCUTS = {
 function renderShortcuts() {
   $$('.shortcuts[data-sc]').forEach(el => {
     const html = (SHORTCUTS[el.dataset.sc] || []).filter(([id]) => keys.some(k => k.id === id)).map(([id, label, icon]) =>
-      `<button class="sc" data-kb="${esc(id)}" title="${esc((keys.find(k => k.id === id) || {}).bound || '')}"><img src="${iconUrl(icon)}" alt="" onerror="this.remove()">${esc(label)}</button>`).join('');
+      `<button class="sc" data-kb="${esc(id)}" title="${esc((keys.find(k => k.id === id) || {}).bound || '')}"><img src="${iconUrl(icon)}" alt="" onerror="iconErr(this)">${esc(label)}</button>`).join('');
     if (el.dataset.html !== html) { el.innerHTML = html; el.dataset.html = html; }
   });
   // in battle the Battle-an-angry-Pokémon key makes no sense; outside one, the battle log doesn't either
@@ -695,10 +831,10 @@ function renderParty() {
     // The sprite is the centrepiece; name + reorder key on top, stats underneath.
     return `<div class="mon ${p.sel === i ? 'sel' : ''}${partyMoveFrom === i ? ' moving' : ''}${m.fainted ? ' fainted' : ''}" data-p="${i}">
       <div class="top"><div class="nm">${esc(m.name)}${m.shiny ? ' ✨' : ''}</div></div>
-      <div class="art">${m.k ? `<img src="${iconUrl(m.k)}" alt="" onerror="this.remove()">` : ''}</div>
+      <div class="art">${m.k ? `<img src="${iconUrl(m.k)}" alt="" onerror="iconErr(this)">` : ''}</div>
       <div class="sub"><b>Lv ${m.lvl}</b> · ${m.hp}/${m.maxHp} HP${m.fainted ? ' · Fainted' : ''}${m.status ? ' · ' + esc(m.status.toUpperCase()) : ''}</div>
       <div class="hp"><i style="width:${Math.round(frac * 100)}%;background:hsl(${hue},75%,45%)"></i></div>
-      <div class="pills">${typePills(m.types)}${m.held ? `<span class="held">${m.hk ? `<img src="${iconUrl(m.hk)}" alt="" onerror="this.remove()">` : '◆ '}${esc(m.held)}</span>` : ''}</div>
+      <div class="pills">${typePills(m.types)}${m.held ? `<span class="held">${m.hk ? `<img src="${iconUrl(m.hk)}" alt="" onerror="iconErr(this)">` : '◆ '}${esc(m.held)}</span>` : ''}</div>
       <button class="send" data-send="${i}">Send out <small>or recall</small></button>
     </div>`;
   }).join('');
@@ -778,7 +914,7 @@ function pkCell(m, ref, q) {
   const data = `data-type="${ref.type}" data-slot="${ref.slot}"` + (ref.type === 'pc' ? ` data-box="${ref.box}"` : '');
   if (!m || !m.id) return `<div class="${cls}" ${data}></div>`;
   if (m.hp === 0 || m.fainted) cls += ' faint';
-  const img = m.k ? `<img src="${iconUrl(m.k)}" alt="" onerror="this.remove()">` : '';
+  const img = m.k ? `<img src="${iconUrl(m.k)}" alt="" onerror="iconErr(this)">` : '';
   return `<div class="${cls}" ${data}>${img}<span class="lv">Lv${m.lvl}</span>${m.shiny ? '<span class="shiny">★</span>' : ''}<span class="nm">${esc(m.name)}</span></div>`;
 }
 
@@ -1019,7 +1155,7 @@ function typeInk(t) { return LIGHT_TYPES.has((t || '').toLowerCase()) ? 'color:#
 function typePills(types) { return (types || []).map(t => `<span class="pill" style="background:${TYPE_COLOR[t.toLowerCase()] || '#555'};${typeInk(t)}">${esc(t)}</span>`).join(''); }
 function monCard(m, foe) {
   const st = Object.entries(m.stages || {}).map(([k, v]) => `<span class="stage ${v > 0 ? 'up' : 'down'}">${esc(k.toUpperCase())} ${v > 0 ? '+' : ''}${v}</span>`).join('');
-  return `<div class="bm ${foe ? 'foe' : ''}">${m.k ? `<img class="spr" src="${iconUrl(m.k)}" alt="" onerror="this.remove()">` : ''}<div class="info"><div class="nm">${esc(m.name)}${m.shiny ? ' ★' : ''} <span class="sub">Lv ${m.lvl}${m.status ? ' · ' + esc(m.status.toUpperCase()) : ''}</span></div>
+  return `<div class="bm ${foe ? 'foe' : ''}">${m.k ? `<img class="spr" src="${iconUrl(m.k)}" alt="" onerror="iconErr(this)">` : ''}<div class="info"><div class="nm">${esc(m.name)}${m.shiny ? ' ★' : ''} <span class="sub">Lv ${m.lvl}${m.status ? ' · ' + esc(m.status.toUpperCase()) : ''}</span></div>
     ${hpBar(m)}<div style="margin-top:6px">${typePills(m.types)}</div><div>${st}</div></div></div>`;
 }
 function renderBattle() {
@@ -1169,14 +1305,13 @@ function renderBag() {
   $('#b-moves').classList.toggle('hidden', !showMoves);
   $('#b-bag').classList.toggle('hidden', showMoves);
   if (showMoves) return;
-  const el = $('#b-bag');
-  if (!bag) { el.innerHTML = '<div class="note">Opening the bag…</div>'; return; }
-  if (bag.error) { el.innerHTML = `<div class="note">${esc(bag.error)}</div>`; return; }
-  const icon = k => `<img src="${iconUrl(k)}" alt="" onerror="this.remove()">`;
+  if (!bag) { setHtml('#b-bag', '<div class="note">Opening the bag…</div>'); return; }
+  if (bag.error) { setHtml('#b-bag', `<div class="note">${esc(bag.error)}</div>`); return; }
+  const icon = k => `<img src="${iconUrl(k)}" alt="" onerror="iconErr(this)">`;
   if (bagView === 'bag') {
     const list = bag.items || [];
-    if (!list.length) { el.innerHTML = `<div class="note">No battle items in your inventory${bag.backpacks ? ' or backpacks' : ''}.</div>`; return; }
-    el.innerHTML = list.map(e => {
+    if (!list.length) { setHtml('#b-bag', `<div class="note">No battle items in your inventory${bag.backpacks ? ' or backpacks' : ''}.</div>`); return; }
+    setHtml('#b-bag', list.map(e => {
       const sel = bagSel === e.k, usable = !e.inGame && e.targets.length > 0;
       let more = '';
       if (sel && usable) more = `<div class="tg">${e.targets.map(t => `<button data-use="${esc(e.k)}" data-t="${esc(t.id)}" data-n="${esc(t.name)}">${esc(t.name)}<small>${t.hp}/${t.maxHp} HP</small></button>`).join('')}</div>`;
@@ -1184,13 +1319,13 @@ function renderBag() {
       // A div, not a button: the target buttons go inside it (buttons can't nest).
       return `<div class="bi tap${sel ? ' sel' : ''}${usable ? '' : ' off'}" role="button" tabindex="0">
         <div class="row1" data-bi="${esc(e.k)}">${icon(e.k)}<div><div class="nm">${esc(e.name)}</div><div class="ct">${bagCount(e)}${usable && !sel ? ' · tap to use' : sel ? ' · tap again to close' : ''}</div></div></div>${more}</div>`;
-    }).join('');
+    }).join(''));
   } else {
     const list = bag.balls || [];
-    if (!list.length) { el.innerHTML = `<div class="note">No Poké Balls in your inventory${bag.backpacks ? ' or backpacks' : ''}.</div>`; return; }
-    el.innerHTML = (bag.wild ? '' : '<div class="note">Balls can only be thrown at wild Pokémon. You can still put one in your hand.</div>') + list.map(e => `
+    if (!list.length) { setHtml('#b-bag', `<div class="note">No Poké Balls in your inventory${bag.backpacks ? ' or backpacks' : ''}.</div>`); return; }
+    setHtml('#b-bag', (bag.wild ? '' : '<div class="note">Balls can only be thrown at wild Pokémon. You can still put one in your hand.</div>') + list.map(e => `
       <div class="bi"><div class="row1">${icon(e.k)}<div><div class="nm">${esc(e.name)}</div><div class="ct">${bagCount(e)}</div></div>${catchChip(e)}</div>
-        <div class="acts"><button class="throw" data-throw="${esc(e.k)}" ${bag.wild ? '' : 'disabled'}>Throw</button><button data-equip="${esc(e.k)}">Equip</button></div></div>`).join('');
+        <div class="acts"><button class="throw" data-throw="${esc(e.k)}" ${bag.wild ? '' : 'disabled'}>Throw</button><button data-equip="${esc(e.k)}">Equip</button></div></div>`).join(''));
   }
 }
 // Catch chance per throw, from Cobblemon's own capture math run on the server (only against a wild Pokémon).
@@ -1266,7 +1401,7 @@ function renderSpawns() {
     const list = b.list.filter(s => !missing || s.dexState !== 'CAUGHT');
     if (!list.length) return '';
     return `<div class="spb"><h3>${esc(b.bucket.replace('-', ' '))}</h3>` + list.map(s => `<div class="sp${spTracked.includes(s.name) ? ' tracked' : ''}" data-sp="${esc(s.name)}">
-      ${s.k ? `<img src="${iconUrl(s.k)}" alt="" onerror="this.remove()">` : ''}
+      ${s.k ? `<img src="${iconUrl(s.k)}" alt="" onerror="iconErr(this)">` : ''}
       <span class="nm">${esc(s.name)}${s.dex ? ` <span class="note">#${s.dex}</span>` : ''}<br>${typePills((s.types || '').split('/').filter(Boolean))}</span>
       ${s.dexState ? `<span class="badge ${s.dexState}">${LABEL[s.dexState] || s.dexState}</span>` : ''}
       <span class="pct">${s.pct}%</span></div>`).join('') + '</div>';
@@ -1427,7 +1562,7 @@ function tileImg(t) {
 }
 const monImgs = new Map();
 function monImg(k) {
-  if (!monImgs.has(k)) { const i = new Image(); i.onload = () => drawMap(); i.src = iconUrl(k); monImgs.set(k, i); }
+  if (!monImgs.has(k)) { const i = new Image(); i.onload = () => drawMap(); i.onerror = () => setTimeout(() => monImgs.delete(k), 5000); i.src = iconUrl(k); monImgs.set(k, i); }
   const i = monImgs.get(k);
   return i.complete && i.naturalWidth ? i : null;
 }
@@ -1605,38 +1740,39 @@ function pkRender() {
   const d = pk.data, names = partyNames();
   $('#pk-game').classList.toggle('hidden', !pk.fromSummary);
   $$('#pk-tabs [data-pkt]').forEach(b => b.classList.toggle('on', b.dataset.pkt === pk.tab));
-  if (!d) { $('#pk-name').textContent = names[pk.slot] || ''; $('#pk-body').innerHTML = '<div class="note">Loading…</div>'; return; }
-  if (d.error) { $('#pk-body').innerHTML = `<div class="note">${esc(d.error)}</div>`; return; }
+  if (!d) { $('#pk-name').textContent = names[pk.slot] || ''; setHtml('#pk-body', '<div class="note">Loading…</div>'); return; }
+  if (d.error) { setHtml('#pk-body', `<div class="note">${esc(d.error)}</div>`); return; }
   const spr = $('#pk-spr');
-  if (d.k && spr.dataset.k !== d.k) { spr.src = iconUrl(d.k); spr.dataset.k = d.k; }
+  if (d.k && spr.dataset.k !== d.k) { delete spr.dataset.tries; delete spr.dataset.src0; spr.style.visibility = ''; spr.src = iconUrl(d.k); spr.dataset.k = d.k; }
   $('#pk-name').innerHTML = `${esc(d.name)}${d.shiny ? ' ★' : ''}${genderMark(d)}<small>Lv ${d.lvl}</small>`;
   $('#pk-sub').innerHTML = typePills(d.types) + (d.held ? ` · holding ${esc(d.held)}` : '');
   const frac = d.maxHp ? d.hp / d.maxHp : 0;
   $('#pk-hp').innerHTML = `<div class="sub">${d.hp}/${d.maxHp} HP${d.fainted ? ' · Fainted' : ''}</div><div class="hp"><i style="width:${Math.round(frac * 100)}%;background:hsl(${Math.round(frac * 120)},75%,45%)"></i></div>`;
   const evo = d.evolutions || [];
   $('#pk-evo').classList.toggle('hidden', !evo.length);
-  $('#pk-evo').innerHTML = evo.map(e => `<button data-pkevo="${e.i}">${e.k ? `<img src="${iconUrl(e.k)}" alt="">` : ''}Evolve into ${esc(e.name)}</button>`).join('');
-  const body = $('#pk-body');
+  setHtml('#pk-evo', evo.map(e => `<button data-pkevo="${e.i}">${e.k ? `<img src="${iconUrl(e.k)}" alt="" onerror="iconErr(this)">` : ''}Evolve into ${esc(e.name)}</button>`).join(''));
+  let body = '';
   if (pk.tab === 'moves') {
     const ms = d.moveList || [];
-    body.innerHTML = ms.map((m, i) => pkMoveCard(m, i, ms.length)).join('') +
-      `<div class="note">Tap a move for details · ▲▼ reorder · Change swaps in a move it knew before (${(d.bench || []).length} available)</div>`;
+    body = ms.map((m, i) => pkMoveCard(m, i, ms.length)).join('') +
+      `<div class="note">Tap a move for details · ▲▼ reorder · Change swaps in another move it can use (${(d.bench || []).length} available)</div>`;
   } else if (pk.tab === 'stats') {
     const row = (k, l) => {
       const iv = (d.ivs || {})[k] || 0, ev = (d.evs || {})[k] || 0;
       return `<div class="row"><span>${l}</span><div class="bar2"><i class="${iv === 31 ? 'max' : ''}" style="width:${Math.round(iv / 31 * 100)}%"></i></div><span>${iv}</span>
         <div class="bar2 ev"><i style="width:${Math.round(ev / 252 * 100)}%"></i></div><span>${ev}</span></div>`;
     };
-    body.innerHTML = `<div class="pk-stats"><div class="row hd"><span></span><span>IVs (${d.ivTotal}/186)</span><span></span><span>EVs (${d.evTotal}/510)</span><span></span></div>
+    body = `<div class="pk-stats"><div class="row hd"><span></span><span>IVs (${d.ivTotal}/186)</span><span></span><span>EVs (${d.evTotal}/510)</span><span></span></div>
       ${row('HP', 'HP')}${row('ATTACK', 'Atk')}${row('DEFENCE', 'Def')}${row('SPECIAL_ATTACK', 'SpA')}${row('SPECIAL_DEFENCE', 'SpD')}${row('SPEED', 'Spe')}</div>
       <div class="pk-kv"><div>Friendship<b>${d.friendship}/255</b></div><div>Experience<b>${d.xp}</b></div></div>`;
   } else {
-    body.innerHTML = `<div class="pk-kv">
+    body = `<div class="pk-kv">
         <div>Species<b>${esc(d.species)}${d.dex ? ' #' + d.dex : ''}</b></div><div>Nature<b>${esc(d.nature || '—')}</b></div>
         <div>Ability<b>${esc(d.ability || '—')}</b></div><div>Held item<b>${esc(d.held || 'Nothing')}</b></div></div>
       <div class="pk-h">Nickname</div>
       <div class="pk-rename"><input id="pk-nick" type="text" maxlength="12" placeholder="${esc(d.species)}" value="${esc(d.nickname || '')}" autocomplete="off"><button id="pk-save">Save</button></div>`;
   }
+  setHtml('#pk-body', body); // unchanged data (the 2.5 s refresh) leaves the cards alone: no flicker, no lost taps
 }
 $('#pk-prev').addEventListener('click', () => pkStep(-1));
 $('#pk-next').addEventListener('click', () => pkStep(1));
@@ -1659,7 +1795,7 @@ $('#pk-body').addEventListener('click', e => {
   const ch = e.target.closest('[data-pkchg]');
   if (ch) {
     const m = d.moveList[Number(ch.dataset.pkchg)], bench = d.bench || [];
-    if (!bench.length) return toast(`${d.name} has no other moves it knew before`, true);
+    if (!bench.length) return toast(`${d.name} has no other moves it can learn right now`, true);
     sheet(`Replace ${m.name} with`, null, bench.map(b => ({ label: b.name, sub: `${b.type} · ${b.cat}${b.power > 0 ? ' · ' + Math.round(b.power) : ''}`,
       run: () => pkAct({ op: 'benchMove', from: m.id, to: b.id }, `${b.name} replaced ${m.name}`) })));
     return;
